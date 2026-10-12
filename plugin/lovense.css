@@ -1,0 +1,101 @@
+/* Lovense Sync. Everything is scoped under .lovense-sync so stash's own
+   pages are never affected. Fits stash's dark Bootstrap 4 theme. */
+
+.lovense-sync {
+  --ls-text: #f5f8fa;
+  --ls-muted: #a7b6c2;
+  --ls-panel: rgba(16, 22, 26, 0.45);
+  --ls-border: rgba(138, 155, 168, 0.25);
+  --ls-meter-bg: #30404d;
+  --ls-meter: #e05a9a;
+  --ls-error: #e5534b;
+
+  background: var(--ls-panel);
+  border: 1px solid var(--ls-border);
+  border-radius: 0.25rem;
+  color: var(--ls-text);
+  font-size: 0.875rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.lovense-sync-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  min-height: 32px;
+}
+
+.lovense-sync-brand {
+  font-weight: 600;
+}
+
+.lovense-sync-device {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lovense-sync-battery,
+.lovense-sync-gain,
+.lovense-sync-level {
+  color: var(--ls-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lovense-sync-meter-wrap {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.lovense-sync-meter {
+  background: var(--ls-meter-bg);
+  border-radius: 3px;
+  display: inline-block;
+  height: 8px;
+  overflow: hidden;
+  width: 8rem;
+}
+
+.lovense-sync-meter-fill {
+  background: var(--ls-meter);
+  display: block;
+  height: 100%;
+  transition: width 80ms linear;
+}
+
+.lovense-sync-level {
+  min-width: 1.5em;
+  text-align: right;
+}
+
+.lovense-sync-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.lovense-sync .lovense-sync-btn {
+  min-height: 32px;
+  min-width: 32px;
+}
+
+.lovense-sync-message,
+.lovense-sync-note {
+  color: var(--ls-muted);
+  font-size: 0.8125rem;
+  padding: 0.125rem 0 0.125rem;
+}
+
+.lovense-sync-message.lovense-sync-error {
+  color: var(--ls-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lovense-sync-meter-fill {
+    transition: none;
+  }
+}

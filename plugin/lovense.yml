@@ -1,0 +1,72 @@
+name: Lovense Sync
+description: >-
+  Drives Lovense vibrators over Web Bluetooth from the scene's funscript while
+  it plays in stash's own scene player. Connect the toy with the control under
+  the player (Chrome or Edge, stash over https or localhost).
+version: 0.1.0
+url: https://github.com/stashapp/stash
+
+ui:
+  javascript:
+    - lovense.js
+  css:
+    - lovense.css
+
+settings:
+  mode:
+    displayName: Mode (speed or position)
+    description: >-
+      How the funscript becomes vibration. speed (default): the faster the
+      stroke moves, the stronger the vibration; pauses in the script are
+      quiet. position: the deeper the stroke, the stronger (funscript
+      position 100 = out = off, 0 = deepest = full).
+    type: STRING
+  strength:
+    displayName: Strength (%)
+    description: >-
+      Caps the vibration: 0-100, default 100. Every level, snap pulses and the
+      Test button are scaled by it, so 50 never goes above half power.
+    type: NUMBER
+  speedFull:
+    displayName: Full-power speed (speed mode)
+    description: >-
+      Stroke speed, in funscript position units per second, that counts as
+      full power in speed mode. Default 300 (a full 0-100 stroke in a third
+      of a second). Lower makes slow scripts stronger; higher saves full
+      power for the fastest parts.
+    type: NUMBER
+  minLevel:
+    displayName: Minimum level (0-20)
+    description: >-
+      The lowest level used while the script moves at all, so gentle parts
+      can still be felt. Default 0. When the script is still, the toy is off
+      regardless. Never above what Strength allows.
+    type: NUMBER
+  latencyMs:
+    displayName: Latency compensation (ms)
+    description: >-
+      Reads the script this many milliseconds ahead of the video to make up
+      for Bluetooth lag. Default 0; try 50-150 if the toy feels late.
+      Negative values make it later.
+    type: NUMBER
+  invert:
+    displayName: Invert position mode
+    description: >-
+      Flips position mode: strongest at the top of the stroke instead of the
+      deepest point. No effect in speed mode.
+    type: BOOLEAN
+  snapPulse:
+    displayName: Snap pulses
+    description: >-
+      On by default (also while this switch has never been set). When the
+      funscript has a "snap" axis, each snap adds a short full-strength
+      pulse (scaled by Strength); at most 3 per second. Off: snaps are
+      ignored.
+    type: BOOLEAN
+  namePrefix:
+    displayName: Extra Bluetooth name filter
+    description: >-
+      Optional. Lovense toys show up as LVS-... or LOVE-... in the browser's
+      Bluetooth picker. If yours uses another name, enter how it starts here
+      to have it listed too.
+    type: STRING
