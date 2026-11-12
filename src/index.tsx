@@ -9,6 +9,7 @@ import { installHook } from "./hook.ts";
 import { registerPages } from "./pages/register.tsx";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
 import { getRuntime } from "./runtime.ts";
+import "./coyote/register.ts";
 
 const rt = getRuntime();
 const lovense = rt.lovense();
