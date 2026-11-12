@@ -88,6 +88,13 @@ export interface ToyDevice {
   readonly settingsPanel?: unknown;
   /** Optional: a React component (props: { device, program }) for the scene tab (TCode: 3D preview). */
   readonly preview?: unknown;
+  /**
+   * Optional: the scene tab's Test button for one script channel (TCode: sweep
+   * the axis the channel is mapped to through its mapped range). Uses the
+   * device's current program; does nothing without one or when the channel is
+   * off. Without it the tab falls back to test().
+   */
+  testChannel?(channelId: string): void;
 }
 
 // --- per-scene mapping and self-timed devices -------------------------------------------
@@ -97,10 +104,18 @@ export interface ScriptChannel {
   id: string;
   /** positions 0..100 with the file's `range` applied, not inverted (raw script positions) */
   actions: readonly { at: number; pos: number }[];
+  /**
+   * Optional: the file marks this channel `inverted` (only ever set on the main
+   * "stroke" channel; the parser already applies the per-axis flag of
+   * embedded axes, together with their `range`). Kept as a flag, like TCode
+   * Player did, so a driver can honour it.
+   */
+  inverted?: boolean;
 }
 
 /** How one script channel drives one device target. min/max are the 0..100 window the channel is lerped into. */
 export interface ChannelMapping {
+  /** a MappingTarget id of the device, or "off" (src/mapping/effective.ts: OFF_TARGET) */
   target: string;
   invert?: boolean;
   min?: number;
