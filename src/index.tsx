@@ -5,6 +5,8 @@
 // (registerDriver in src/devices/registry.ts), before the runtime is made.
 import "./lovense/register.ts";
 import "./coyote/register.ts";
+import "./tcode/register.ts";
+import "./piupiu/register.ts";
 import { installHook } from "./hook.ts";
 import { registerNavMenu } from "./nav/patch.tsx";
 import { registerSceneTab } from "./scene/patch.tsx";
