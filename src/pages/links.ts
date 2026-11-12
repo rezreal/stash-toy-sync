@@ -4,13 +4,15 @@
 //
 //   /toysync                                         devices & mapping
 //   /toysync/calibrate?device=coyote-v3&channel=a&step=1   calibration wizard
-//   /toysync/calibrate?device=coyote-v3&channel=b&step=review
+//   /toysync/calibrate?device=coyote-v3:2&channel=b&step=review
+//
+// `device` is a device instance id (src/devices/instances.ts); the first
+// instance of a kind has the kind as its id, so links from before instances
+// (device=<kind>) still open the same device.
 //
 // Not under /plugin: stash's server owns /plugin (plugin files) and answers
 // anything else below it with a 404, so such a page breaks on reload.
 // Pure, tested under node --test.
-import type { DeviceKind } from "../devices/types.ts";
-
 export const DEVICES_ROUTE = "/toysync";
 export const CALIBRATE_ROUTE = "/toysync/calibrate";
 
@@ -19,7 +21,8 @@ export type WizardStep = 1 | 2 | 3 | 4 | "review";
 export const WIZARD_STEPS: readonly WizardStep[] = [1, 2, 3, 4, "review"];
 
 export interface CalibrateLink {
-  device: DeviceKind;
+  /** the device instance id */
+  device: string;
   channel: Channel;
   step: WizardStep;
 }
@@ -31,9 +34,9 @@ export interface CalibrateQuery {
   step?: string;
 }
 
-/** a calibratable device the page could show */
+/** a calibratable device instance the page could show */
 export interface CalibrateChoice {
-  kind: DeviceKind;
+  instanceId: string;
   channels: readonly Channel[];
   connected: boolean;
 }
@@ -61,28 +64,27 @@ function parseStep(raw: string | undefined): WizardStep | undefined {
  * valid, else 1. undefined when no device is named and none is connected.
  */
 export function resolveCalibrateLink(q: CalibrateQuery, choices: readonly CalibrateChoice[]): CalibrateLink | undefined {
-  const named = choices.find((c) => c.kind === q.device);
+  const named = choices.find((c) => c.instanceId === q.device);
   const choice = named ?? choices.find((c) => c.connected);
   if (!choice || choice.channels.length === 0) return undefined;
   const channel = choice.channels.find((c) => c === q.channel) ?? choice.channels[0]!;
-  return { device: choice.kind, channel, step: parseStep(q.step) ?? 1 };
+  return { device: choice.instanceId, channel, step: parseStep(q.step) ?? 1 };
 }
+
+// ":" is fine in a query string; keeping it readable keeps "coyote-v3:2" recognisable in the address bar
+const queryValue = (v: string) => encodeURIComponent(v).replace(/%3A/gi, ":");
 
 /** the query string of a view, in a fixed order */
 export function calibrateSearch(link: CalibrateLink): string {
-  const params = new URLSearchParams();
-  params.set("device", link.device);
-  params.set("channel", link.channel);
-  params.set("step", String(link.step));
-  return `?${params.toString()}`;
+  return `?device=${queryValue(link.device)}&channel=${queryValue(link.channel)}&step=${queryValue(String(link.step))}`;
 }
 
 export function calibrateHref(link: CalibrateLink): string {
   return CALIBRATE_ROUTE + calibrateSearch(link);
 }
 
-/** the first calibration step of a device's channel (A by default) */
-export function calibrateStartHref(device: DeviceKind, channel: Channel = "a"): string {
+/** the first calibration step of a device instance's channel (A by default) */
+export function calibrateStartHref(device: string, channel: Channel = "a"): string {
   return calibrateHref({ device, channel, step: 1 });
 }
 

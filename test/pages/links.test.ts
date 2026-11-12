@@ -13,9 +13,9 @@ import {
   type CalibrateChoice,
 } from "../../src/pages/links.ts";
 
-const v3: CalibrateChoice = { kind: "coyote-v3", channels: ["a", "b"], connected: true };
-const v2: CalibrateChoice = { kind: "coyote-v2", channels: ["a", "b"], connected: false };
-const mono: CalibrateChoice = { kind: "coyote-v2", channels: ["a"], connected: true };
+const v3: CalibrateChoice = { instanceId: "coyote-v3", channels: ["a", "b"], connected: true };
+const v2: CalibrateChoice = { instanceId: "coyote-v2", channels: ["a", "b"], connected: false };
+const mono: CalibrateChoice = { instanceId: "coyote-v2", channels: ["a"], connected: true };
 
 describe("calibrate page URL", () => {
   it("parses the query", () => {
@@ -55,6 +55,23 @@ describe("calibrate page URL", () => {
     assert.equal(calibrateHref({ device: "coyote-v3", channel: "b", step: 4 }), "/toysync/calibrate?device=coyote-v3&channel=b&step=4");
     assert.equal(calibrateStartHref("coyote-v2"), "/toysync/calibrate?device=coyote-v2&channel=a&step=1");
     assert.equal(isCanonical("device=coyote-v2&channel=a&step=1", { device: "coyote-v2", channel: "a", step: 1 }), true);
+  });
+
+  it("selects devices by instance id; old device=<kind> links open the first instance", () => {
+    const second: CalibrateChoice = { instanceId: "coyote-v3:2", channels: ["a", "b"], connected: false };
+    const choices = [v3, second];
+    assert.deepEqual(parseCalibrateQuery("?device=coyote-v3%3A2&channel=b&step=2"), { device: "coyote-v3:2", channel: "b", step: "2" });
+    const l = resolveCalibrateLink(parseCalibrateQuery("?device=coyote-v3:2&channel=b&step=2"), choices)!;
+    assert.deepEqual(l, { device: "coyote-v3:2", channel: "b", step: 2 });
+    assert.equal(calibrateHref(l), "/toysync/calibrate?device=coyote-v3:2&channel=b&step=2", "the colon stays readable");
+    assert.equal(isCanonical("?device=coyote-v3:2&channel=b&step=2", l), true);
+    assert.equal(isCanonical("?device=coyote-v3%3A2&channel=b&step=2", l), false, "normalised to the readable form");
+    assert.equal(calibrateStartHref("coyote-v3:2", "b"), "/toysync/calibrate?device=coyote-v3:2&channel=b&step=1");
+    // a link from before instances: the kind is the first instance's id
+    assert.equal(resolveCalibrateLink(parseCalibrateQuery("?device=coyote-v3&channel=a&step=3"), choices)!.device, "coyote-v3");
+    // a removed instance falls back to a connected one
+    assert.equal(resolveCalibrateLink({ device: "coyote-v3:5" }, choices)!.device, "coyote-v3");
+    assert.equal(resolveCalibrateLink({ device: "coyote-v3:5" }, [second]), undefined);
   });
 
   it("walks the steps", () => {

@@ -1,4 +1,7 @@
-// /toysync/calibrate?device=<kind>&channel=a|b&step=1..4|review
+// /toysync/calibrate?device=<instanceId>&channel=a|b&step=1..4|review
+//
+// `device` names a device instance ("coyote-v3", "coyote-v3:2"); a link with
+// a kind opens that kind's first instance, whose id is the kind.
 //
 // A step-by-step wizard per channel of an e-stim style device: 1 First
 // felt, 2 Comfort max, 3 Nudge (sharp burst), 4 Hard max, then review &
@@ -7,7 +10,6 @@
 // forward and reload work; invalid parameters are normalised with replace.
 // The levels picked so far survive in sessionStorage (wizard.ts).
 import { isCalibratable, saveCalibration, validateCalibration } from "../devices/calibration.ts";
-import { driverLabel } from "../devices/registry.ts";
 import type { CalibratableDevice } from "../devices/types.ts";
 import { getRuntime } from "../runtime.ts";
 import { useDeviceEntries, useSyncedSettings } from "../ui/hooks.ts";
@@ -56,12 +58,15 @@ export function CalibratePage() {
   const entries = useDeviceEntries(rt.manager);
 
   const choices: CalibrateChoice[] = [];
-  for (const kind of rt.manager.kinds()) {
-    const d = rt.manager.device(kind);
+  const names = new Map<string, string>();
+  for (const inst of rt.manager.instances()) {
+    const d = rt.manager.device(inst.instanceId);
     if (!isCalibratable(d)) continue;
-    const connected = entries.find((e) => e.kind === kind)?.status.connection === "connected";
-    choices.push({ kind, channels: d.channels, connected });
+    const entry = entries.find((e) => e.instanceId === inst.instanceId);
+    names.set(inst.instanceId, entry?.name ?? inst.name);
+    choices.push({ instanceId: inst.instanceId, channels: d.channels, connected: entry?.status.connection === "connected" });
   }
+  const nameOf = (id: string) => names.get(id) ?? id;
   const link = resolveCalibrateLink(parseCalibrateQuery(location.search), choices);
   const canonical = link ? calibrateHref(link) : undefined;
 
@@ -93,7 +98,7 @@ export function CalibratePage() {
         <p>
           {choices.length === 0
             ? "None of the installed drivers needs calibration."
-            : `Connect a ${choices.map((c) => driverLabel(c.kind)).join(" or ")} on the devices page first.`}{" "}
+            : `Connect ${choices.map((c) => nameOf(c.instanceId)).join(" or ")} on the devices page first.`}{" "}
           <Link to={DEVICES_ROUTE}>Go to devices</Link>
         </p>
       </div>
@@ -101,7 +106,7 @@ export function CalibratePage() {
   }
 
   const device = rt.manager.device(link.device) as CalibratableDevice;
-  const status = entries.find((e) => e.kind === link.device)?.status ?? device.status();
+  const status = entries.find((e) => e.instanceId === link.device)?.status ?? device.status();
   const go = (patch: Partial<CalibrateLink>) => history.push(calibrateHref({ ...link, ...patch }));
 
   return (
@@ -112,27 +117,27 @@ export function CalibratePage() {
         <div className="toysync-tabs" role="group" aria-label="Device">
           {choices.map((c) => (
             <button
-              key={c.kind}
+              key={c.instanceId}
               type="button"
-              className={`btn btn-sm ${c.kind === link.device ? "btn-primary" : "btn-secondary"} toysync-btn`}
-              aria-pressed={c.kind === link.device}
-              onClick={() => c.kind !== link.device && go({ device: c.kind, channel: c.channels[0]!, step: 1 })}
+              className={`btn btn-sm ${c.instanceId === link.device ? "btn-primary" : "btn-secondary"} toysync-btn`}
+              aria-pressed={c.instanceId === link.device}
+              onClick={() => c.instanceId !== link.device && go({ device: c.instanceId, channel: c.channels[0]!, step: 1 })}
             >
-              {driverLabel(c.kind)}
+              {nameOf(c.instanceId)}
             </button>
           ))}
         </div>
       )}
       {status.connection !== "connected" ? (
         <div className="toysync-card">
-          <h2 className="toysync-h2">{driverLabel(link.device)} isn't connected</h2>
+          <h2 className="toysync-h2">{nameOf(link.device)} isn't connected</h2>
           {status.message && <p className="toysync-message">{status.message}</p>}
           <button type="button" className="btn btn-primary toysync-btn" onClick={() => void rt.manager.connect(link.device)}>
             Connect
           </button>
         </div>
       ) : (
-        <Wizard key={`${link.device}.${device.id}.${link.channel}`} device={device} link={link} go={go} />
+        <Wizard key={`${link.device}.${device.id}.${link.channel}`} device={device} name={nameOf(link.device)} link={link} go={go} />
       )}
     </div>
   );
@@ -140,7 +145,7 @@ export function CalibratePage() {
 
 const STEP_NAMES: Record<string, string> = { 1: "First felt", 2: "Comfort max", 3: "Nudge", 4: "Hard max", review: "Review" };
 
-function Wizard(props: { device: CalibratableDevice; link: CalibrateLink; go(patch: Partial<CalibrateLink>): void }) {
+function Wizard(props: { device: CalibratableDevice; name: string; link: CalibrateLink; go(patch: Partial<CalibrateLink>): void }) {
   const { device, link, go } = props;
   const { Link } = pluginApi().libraries.ReactRouterDOM;
   const range = device.levelRange();
@@ -164,6 +169,7 @@ function Wizard(props: { device: CalibratableDevice; link: CalibrateLink; go(pat
 
   return (
     <div className="toysync-wizard">
+      <div className="toysync-muted toysync-small">Calibrating {props.name}</div>
       {device.channels.length > 1 && (
         <div className="toysync-tabs" role="group" aria-label="Channel">
           {device.channels.map((ch: Channel) => (
