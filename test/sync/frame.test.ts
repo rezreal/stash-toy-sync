@@ -239,3 +239,29 @@ describe("gain", () => {
     close(peak!.a, 0.5, 1e-9);
   });
 });
+
+describe("per-device frames and the scene offset", () => {
+  it("builds a frame per mapped kind next to the default frame", () => {
+    const sent: [DriveFrame | null, ReadonlyMap<string, DriveFrame> | undefined][] = [];
+    const clock = new FakeClock();
+    const engine = createSyncEngine({ output: { drive: (f, k) => sent.push([f, k]) }, now: clock.now, timers: clock });
+    engine.setSettings({ ...DEFAULT_SETTINGS, mode: "position" });
+    engine.setScript(parseFunscript({ actions: [a(0, 0), a(60_000, 0)], channels: { roll: flat(30) } }));
+    engine.setDeviceMappings(new Map([["lovense", { roll: { target: "intensity" }, stroke: { target: "off" } }]]));
+    const f = engine.tick({ playing: true, timeSec: 5 })!;
+    close(f.intensity, 1, 1e-9);
+    close(engine.frameFor("lovense")!.intensity, 0.3, 1e-9);
+    assert.equal(engine.frameFor("coyote-v3"), f);
+    engine.test(100);
+    assert.equal(sent.at(-1)![1], undefined, "the test pulse goes to everyone");
+    engine.stop();
+    assert.deepEqual(sent.at(-1), [null, undefined]);
+  });
+
+  it("adds the scene offset to the video time", () => {
+    const t = setup({ mode: "position" });
+    t.engine.setScript(parseFunscript({ actions: [a(0, 100), a(10_000, 0)] }));
+    t.engine.setOffsetMs(2500);
+    close(t.engine.tick({ playing: true, timeSec: 5 })!.intensity, 0.75, 1e-9);
+  });
+});

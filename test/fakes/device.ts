@@ -80,3 +80,16 @@ export class FakeDevice implements CalibratableDevice {
     return { min: 0, max: 200 };
   }
 }
+
+/** a self-timed device: records every program it gets */
+export class FakeSelfTimedDevice extends FakeDevice {
+  readonly selfTimed = true as const;
+  programs: (import("../../src/devices/types.ts").DeviceProgram | null)[] = [];
+  tested: string[] = [];
+  setProgram(p: import("../../src/devices/types.ts").DeviceProgram | null): void {
+    this.programs.push(p);
+  }
+  testChannel(id: string): void {
+    this.tested.push(id);
+  }
+}

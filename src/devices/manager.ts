@@ -9,16 +9,47 @@
 // - A device that was connected and drops while still wanted is retried with
 //   its resume() (backing off), unless the driver reconnects on its own
 //   (selfReconnects). disconnect(kind) ends the wish.
+// - DriveFrame devices get the engine's frames (their own kind's frame when
+//   the engine made one, else the default frame). Self-timed devices
+//   (selfTimed: true) never get frames: they get setProgram() with the open
+//   scene's program when a scene with a script opens, when its mapping /
+//   options change (live edits included), and setProgram(null) when it
+//   closes or has no script. Unchanged programs aren't sent again.
 // - One throwing driver never stops the others.
 // Time and timers are injected; no DOM.
+import { activeMapping } from "../mapping/frame.ts";
+import { isSelfTimed } from "../mapping/effective.ts";
 import { createListeners, GLOBAL_TIMERS, type Timers } from "../util/timers.ts";
 import { DRIVERS, type DriverContext, type DriverRegistry } from "./registry.ts";
-import type { DeviceKind, DeviceStatus, DriveFrame, ToyDevice } from "./types.ts";
+import type {
+  ChannelMapping,
+  DeviceKind,
+  DeviceProgram,
+  DeviceStatus,
+  DriveFrame,
+  PlaybackClock,
+  ScriptChannel,
+  SelfTimedDevice,
+  ToyDevice,
+} from "./types.ts";
 
 export interface DeviceEntry {
   kind: DeviceKind;
   id: string;
   status: DeviceStatus;
+}
+
+/** the open scene, as the manager turns it into each device's DeviceProgram */
+export interface SceneProgramSource {
+  sceneId: string;
+  clock: PlaybackClock;
+  /** the scene's script channels (empty: no script, every program is null) */
+  channels: readonly ScriptChannel[];
+  /** a device's effective mapping for the scene ("off" entries are dropped for the program) */
+  mapping(device: ToyDevice): Readonly<Record<string, ChannelMapping>>;
+  /** the scene's options for a device kind */
+  options(kind: DeviceKind): Readonly<Record<string, unknown>> | undefined;
+  gain(): number;
 }
 
 export interface DeviceManager {
@@ -35,8 +66,16 @@ export interface DeviceManager {
   disconnectAll(): void;
   /** silent reconnect of every device granted earlier (no picker); never rejects */
   resumeAll(): Promise<void>;
-  /** the engine's frame for this tick, to every device */
-  driveAll(frame: DriveFrame | null): void;
+  /**
+   * The engine's frames for this tick: each DriveFrame device gets its kind's
+   * frame from perKind, else `frame` (null = silence for all). Self-timed
+   * devices get nothing.
+   */
+  driveAll(frame: DriveFrame | null, perKind?: ReadonlyMap<DeviceKind, DriveFrame>): void;
+  /** the open scene (or null): self-timed devices get setProgram() when their program changes */
+  setScene(scene: SceneProgramSource | null): void;
+  /** a device's current program (for previews; also kept for DriveFrame devices), null without a scene / script */
+  program(kind: DeviceKind): DeviceProgram | null;
   /** one nudge on every device that has one; returns how many nudged */
   nudgeAll(): number;
   /** output 0 on every device now, keep the connections */
@@ -65,6 +104,9 @@ interface Slot {
   attempt: number;
   timer: unknown;
   unsubscribe: () => void;
+  program: DeviceProgram | null;
+  /** identifies `program` (scene, channels, mapping, options); null = no program */
+  programKey: string | null;
 }
 
 function safely(what: string, fn: () => void): void {
@@ -82,6 +124,37 @@ export function createDeviceManager(opts: DeviceManagerOptions): DeviceManager {
   const slots = new Map<DeviceKind, Slot>();
   const listeners = createListeners<DeviceEntry[]>();
   let disposed = false;
+  let scene: SceneProgramSource | null = null;
+  // identity of channel arrays, so a program key doesn't serialize every action
+  const channelIds = new WeakMap<object, number>();
+  let channelSeq = 0;
+  const channelToken = (c: readonly ScriptChannel[]) => {
+    let id = channelIds.get(c);
+    if (id === undefined) channelIds.set(c, (id = ++channelSeq));
+    return id;
+  };
+
+  function applyProgram(slot: Slot): void {
+    const d = slot.device;
+    let program: DeviceProgram | null = null;
+    let key: string | null = null;
+    if (scene && scene.channels.length > 0) {
+      const s = scene;
+      let mapping: Record<string, ChannelMapping> = {};
+      let options: Readonly<Record<string, unknown>> | undefined;
+      safely(`${d.kind} mapping`, () => {
+        mapping = activeMapping(s.mapping(d));
+        options = s.options(d.kind);
+      });
+      program = { sceneId: s.sceneId, clock: s.clock, channels: s.channels, mapping, gain: () => s.gain() };
+      if (options) program.options = options;
+      key = JSON.stringify([s.sceneId, channelToken(s.channels), mapping, options ?? null]);
+    }
+    if (key === slot.programKey) return;
+    slot.programKey = key;
+    slot.program = program;
+    if (isSelfTimed(d)) safely(`${d.kind} setProgram`, () => (d as SelfTimedDevice).setProgram(program));
+  }
 
   function statuses(): DeviceEntry[] {
     return [...slots.values()].map((s) => ({ kind: s.device.kind, id: s.device.id, status: s.device.status() }));
@@ -128,8 +201,9 @@ export function createDeviceManager(opts: DeviceManagerOptions): DeviceManager {
       console.error(`[toysync] the ${kind} driver failed to start`, err);
       return undefined;
     }
-    const slot: Slot = { device, wanted: false, attempt: 0, timer: undefined, unsubscribe: () => undefined };
+    const slot: Slot = { device, wanted: false, attempt: 0, timer: undefined, unsubscribe: () => undefined, program: null, programKey: null };
     slots.set(kind, slot);
+    applyProgram(slot);
     slot.unsubscribe = device.onStatus((s) => {
       if (s.connection === "connected") {
         slot.wanted = true;
@@ -186,9 +260,19 @@ export function createDeviceManager(opts: DeviceManagerOptions): DeviceManager {
         }),
       );
     },
-    driveAll(frame) {
-      for (const slot of slots.values()) safely(`${slot.device.kind} drive`, () => slot.device.drive(frame));
+    driveAll(frame, perKind) {
+      for (const slot of slots.values()) {
+        const d = slot.device;
+        if (isSelfTimed(d)) continue;
+        const f = frame === null ? null : (perKind?.get(d.kind) ?? frame);
+        safely(`${d.kind} drive`, () => d.drive(f));
+      }
     },
+    setScene(next) {
+      scene = next;
+      for (const slot of slots.values()) applyProgram(slot);
+    },
+    program: (kind) => slots.get(kind)?.program ?? null,
     nudgeAll() {
       let n = 0;
       for (const slot of slots.values()) {

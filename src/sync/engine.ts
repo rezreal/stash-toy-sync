@@ -1,6 +1,9 @@
-// Turns playback + funscript + settings + gain into one DriveFrame per tick
-// (the player slot ticks every ~50 ms) and hands it to the output (the
-// DeviceManager). Pure apart from injected time, timers and the output.
+// Turns playback + funscript + settings + gain into DriveFrames every tick
+// (the player slot ticks every ~50 ms) and hands them to the output (the
+// DeviceManager): one default frame (the built-in mapping: what the hook
+// contract reports) plus one per device kind with a mapping
+// (setDeviceMappings, from the scene's mapping; src/mapping/frame.ts builds
+// them). Pure apart from injected time, timers and the output.
 //
 // Output is null (silence) unless the video is playing and the scene has a
 // script. Whenever output stops (pause, end, seek, no script, unmount) the
@@ -8,7 +11,7 @@
 // limits, so the final 0 is really written and not coalesced away by a
 // quick resume.
 //
-// The frame, from the stroke (the main axis):
+// The default frame, from the stroke (the main axis):
 // - intensity: speed mode = stroke speed |Δpos|/Δt over speedFull, smoothed
 //   (~150 ms); position mode = depth (100 - pos), `invert` flips it
 // - balance: depth / 100 (pos 100 = out -> 0 = channel A; deepest -> B);
@@ -21,11 +24,15 @@
 // - with no stroke and no intensity axis, intensity = max(a, b)
 // Snap pulses lift intensity (and a / b when present) to full for 300 ms.
 // The hook gain multiplies intensity, a and b, never balance or speed.
-import type { DriveFrame } from "../devices/types.ts";
+// Script time = video time + latency setting + the scene offset.
+import type { ChannelMapping, DeviceKind, DriveFrame, ScriptChannel } from "../devices/types.ts";
 import type { Funscript } from "../funscript/parse.ts";
 import { findAxis } from "../funscript/parse.ts";
+import { scriptChannels } from "../mapping/channels.ts";
+import { activeMapping, buildFrame, type FrameSources } from "../mapping/frame.ts";
+import { DRIVE_TARGET_IDS, driveDefaultMapping, resolveDriveSources } from "../mapping/targets.ts";
 import { GLOBAL_TIMERS, defaultNow, type Timers } from "../util/timers.ts";
-import { parseAxisMap, resolveAxes, type AxisTarget, type ResolvedAxes } from "./axes.ts";
+import { parseAxisMap, type AxisTarget } from "./axes.ts";
 import {
   createSmoother,
   positionAt,
@@ -47,7 +54,12 @@ export interface PlaybackState {
 }
 
 export interface FrameOutput {
-  drive(frame: DriveFrame | null): void;
+  /**
+   * frame: the default frame (null = silence for every device); perKind: the
+   * frames of device kinds with their own mapping (absent while silent or
+   * during the test pulse: then `frame` is for everyone)
+   */
+  drive(frame: DriveFrame | null, perKind?: ReadonlyMap<DeviceKind, DriveFrame>): void;
 }
 
 export interface SyncEngineOptions {
@@ -72,6 +84,12 @@ export interface SyncEngine {
   setSettings(s: Settings): void;
   /** the scene's funscript, or undefined for none */
   setScript(f: Funscript | undefined): void;
+  /** the script's channels (same array until the script changes) */
+  channels(): readonly ScriptChannel[];
+  /** per device kind: its mapping for the scene (DriveFrame devices only); kinds left out get the default frame */
+  setDeviceMappings(m: ReadonlyMap<DeviceKind, Readonly<Record<string, ChannelMapping>>> | undefined): void;
+  /** the scene's offset in ms (added to the video time, like the latency setting) */
+  setOffsetMs(ms: number): void;
   hasScript(): boolean;
   /** what drives what for the current script; undefined without one */
   mapping(): EffectiveMapping | undefined;
@@ -83,8 +101,10 @@ export interface SyncEngine {
   test(durationMs?: number): void;
   /** output null now and forget the playback state (unmount, scene change) */
   stop(): void;
-  /** the frame last sent */
+  /** the default frame last sent */
   frame(): DriveFrame | null;
+  /** the frame last sent to a device kind (its own, else the default) */
+  frameFor(kind: DeviceKind): DriveFrame | null;
   /** called after every frame sent (for meters and status events) */
   onFrame(cb: (frame: DriveFrame | null) => void): () => void;
   dispose(): void;
@@ -101,14 +121,6 @@ export const SPEED_SMOOTHING_MS = 60;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : Number.isFinite(v) ? v : 0);
 
-/** an axis' value 0..1 at script time ms, undefined outside it */
-function axisAt(axes: ResolvedAxes, target: AxisTarget, ms: number): number | undefined {
-  const m = axes[target];
-  if (!m) return undefined;
-  const pos = positionAt(m.actions, ms);
-  return pos === undefined ? undefined : clamp01(pos / 100);
-}
-
 export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
   const now = opts.now ?? defaultNow;
   const timers = opts.timers ?? GLOBAL_TIMERS;
@@ -118,7 +130,12 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
   let settings: Settings = DEFAULT_SETTINGS;
   let source: Funscript | undefined;
   let script: StrokeScript | undefined;
-  let axes: ResolvedAxes = {};
+  let channels: readonly ScriptChannel[] = [];
+  const channelById = new Map<string, ScriptChannel>();
+  /** the built-in mapping (every DriveFrame target), without "off" entries */
+  let defaultMapping: Record<string, ChannelMapping> = {};
+  let deviceMappings = new Map<DeviceKind, Record<string, ChannelMapping>>();
+  let offsetMs = 0;
   let axisProblems: string[] = [];
   let pulser: SnapPulser | undefined;
   let snapAxis: Funscript["actions"] | undefined;
@@ -134,24 +151,41 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
   let testUntil = -Infinity;
   let testTimer: unknown;
   let current: DriveFrame | null = null;
+  let currentPerKind: ReadonlyMap<DeviceKind, DriveFrame> | undefined;
 
   function rebuildPulser(): void {
     pulser = settings.snapPulse && snapAxis && snapAxis.length > 0 ? createSnapPulser(snapAxis) : undefined;
   }
 
   function rebuildAxes(): void {
-    const parsed = parseAxisMap(settings.axisMap);
-    axisProblems = parsed.problems;
-    axes = source ? resolveAxes(source, parsed.entries) : {};
+    axisProblems = parseAxisMap(settings.axisMap).problems;
+    defaultMapping = activeMapping(driveDefaultMapping(channels, settings.axisMap, DRIVE_TARGET_IDS));
   }
 
   function usable(): boolean {
-    return (script !== undefined && script.actions.length > 0) || Object.keys(axes).length > 0;
+    if (script !== undefined && script.actions.length > 0) return true;
+    if (Object.keys(defaultMapping).length > 0) return true;
+    for (const m of deviceMappings.values()) if (Object.keys(m).length > 0) return true;
+    return false;
   }
 
-  function output(frame: DriveFrame | null): DriveFrame | null {
+  function level(id: string, ms: number): number | undefined {
+    const ch = channelById.get(id);
+    if (!ch) return undefined;
+    const pos = positionAt(ch.actions, ms);
+    return pos === undefined ? undefined : clamp01(pos / 100);
+  }
+
+  interface Computed {
+    frame: DriveFrame | null;
+    perKind?: Map<DeviceKind, DriveFrame>;
+  }
+
+  function output(c: Computed): DriveFrame | null {
+    const frame = c.frame;
     current = frame;
-    opts.output.drive(frame);
+    currentPerKind = frame ? c.perKind : undefined;
+    opts.output.drive(frame, currentPerKind);
     for (const cb of [...frameListeners]) {
       try {
         cb(frame);
@@ -172,64 +206,57 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
     pulser?.reset();
   }
 
-  function frameAt(ms: number, t: number, pulse: number): DriveFrame {
+  function framesAt(ms: number, t: number, pulse: number): Computed {
     const stroke = script && script.actions.length > 0 ? script : undefined;
     const rawSpeed = stroke ? speedIntensity(stroke.actions, ms, settings.speedFull) : 0;
     const strokeSpeed = speedSmoother.next(rawSpeed, t);
-    const strokeIntensity = !stroke
-      ? undefined
-      : settings.mode === "position"
-        ? positionIntensity(stroke, ms, settings.invert)
-        : smoother.next(rawSpeed, t);
-    const strokeBalance = stroke ? (strokeDepth(stroke, ms) ?? 0.5) : 0.5;
-
-    // a mapped a / b axis outside its actions is silence on that channel
-    const a = axes.a ? (axisAt(axes, "a", ms) ?? 0) : undefined;
-    const b = axes.b ? (axisAt(axes, "b", ms) ?? 0) : undefined;
-    let intensity: number;
-    if (axes.intensity) intensity = axisAt(axes, "intensity", ms) ?? 0;
-    else if (strokeIntensity !== undefined) intensity = strokeIntensity;
-    else intensity = Math.max(a ?? 0, b ?? 0);
-    const balance = axes.balance ? (axisAt(axes, "balance", ms) ?? strokeBalance) : strokeBalance;
-    const speed = axes.speed ? (axisAt(axes, "speed", ms) ?? clamp01(strokeSpeed)) : clamp01(strokeSpeed);
-
-    const g = clamp01(gainOf());
-    const lift = (v: number) => clamp01(Math.max(v, pulse) * g);
-    const frame: DriveFrame = { intensity: lift(intensity), balance: clamp01(balance), speed: clamp01(speed), gain: g };
-    if (a !== undefined) frame.a = lift(a);
-    if (b !== undefined) frame.b = lift(b);
-    return frame;
+    const sources: FrameSources = {
+      level: (id) => level(id, ms),
+    };
+    if (stroke) {
+      sources.stroke = {
+        intensity: settings.mode === "position" ? positionIntensity(stroke, ms, settings.invert) : smoother.next(rawSpeed, t),
+        balance: strokeDepth(stroke, ms),
+        speed: clamp01(strokeSpeed),
+      };
+    }
+    const g = gainOf();
+    const frame = buildFrame(defaultMapping, sources, pulse, g);
+    if (deviceMappings.size === 0) return { frame };
+    const perKind = new Map<DeviceKind, DriveFrame>();
+    for (const [kind, m] of deviceMappings) perKind.set(kind, buildFrame(m, sources, pulse, g));
+    return { frame, perKind };
   }
 
-  function compute(p: PlaybackState): DriveFrame | null {
+  function compute(p: PlaybackState): Computed {
     const t = now();
     if (t < testUntil) {
-      // the test pulse wins; motion state restarts afterwards
+      // the test pulse wins (every DriveFrame device); motion state restarts afterwards
       stopActive(t);
       holdUntil = -Infinity;
-      return { intensity: TEST_INTENSITY, balance: 0.5, speed: 0.5 };
+      return { frame: { intensity: TEST_INTENSITY, balance: 0.5, speed: 0.5 } };
     }
     if (!p.playing || !usable() || !Number.isFinite(p.timeSec)) {
       stopActive(t);
-      return null;
+      return { frame: null };
     }
-    const sec = p.timeSec + settings.latencyMs / 1000;
+    const sec = p.timeSec + (settings.latencyMs + offsetMs) / 1000;
     if (prev && Math.abs((sec - prev.sec) * 1000 - (t - prev.wall)) > SEEK_JUMP_MS) {
       // a seek while playing: silence for a moment, then pick up at the new place
       stopActive(t);
       prev = { sec, wall: t };
-      return null;
+      return { frame: null };
     }
     const prevSec = prev?.sec ?? sec;
     prev = { sec, wall: t };
     if (t < holdUntil) {
       // keep the cursor moving so a snap during the hold doesn't fire late
       pulser?.step(prevSec, sec, t);
-      return null;
+      return { frame: null };
     }
     active = true;
     const pulse = pulser ? pulser.step(prevSec, sec, t) : 0;
-    return frameAt(sec * 1000, t, pulse);
+    return framesAt(sec * 1000, t, pulse);
   }
 
   return {
@@ -243,6 +270,9 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
     setScript(f) {
       source = f;
       script = f && f.actions.length > 0 ? strokeScript(f) : undefined;
+      channels = scriptChannels(f);
+      channelById.clear();
+      for (const ch of channels) channelById.set(ch.id, ch);
       snapAxis = f ? findAxis(f, ["snap", "snaps"]) : undefined;
       rebuildAxes();
       rebuildPulser();
@@ -250,19 +280,29 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
       smoother.reset();
       speedSmoother.reset();
     },
+    channels: () => channels,
+    setDeviceMappings(m) {
+      const next = new Map<DeviceKind, Record<string, ChannelMapping>>();
+      if (m) for (const [kind, mapping] of m) next.set(kind, activeMapping(mapping));
+      deviceMappings = next;
+    },
+    setOffsetMs(ms) {
+      offsetMs = Number.isFinite(ms) ? ms : 0;
+    },
     hasScript: usable,
     mapping() {
       if (!source || !usable()) return undefined;
       const stroke = script !== undefined && script.actions.length > 0;
-      const strokeOr = (t: AxisTarget) => axes[t]?.axis ?? (stroke ? "stroke" : undefined);
+      const src = resolveDriveSources(channels, settings.axisMap);
+      const strokeOr = (t: AxisTarget) => src[t] ?? (src.auto ? "stroke" : undefined);
       return {
         stroke,
         targets: {
           intensity: strokeOr("intensity"),
           balance: strokeOr("balance"),
           speed: strokeOr("speed"),
-          a: axes.a?.axis,
-          b: axes.b?.axis,
+          a: src.a,
+          b: src.b,
         },
         problems: axisProblems,
       };
@@ -291,9 +331,10 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
       if (testTimer !== undefined) timers.clearTimeout(testTimer);
       testTimer = undefined;
       stopActive(now());
-      output(null);
+      output({ frame: null });
     },
     frame: () => current,
+    frameFor: (kind) => (current ? (currentPerKind?.get(kind) ?? current) : null),
     onFrame(cb) {
       frameListeners.add(cb);
       return () => frameListeners.delete(cb);
