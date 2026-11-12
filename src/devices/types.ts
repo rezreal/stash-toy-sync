@@ -4,7 +4,7 @@
 // own everything device specific: their own level scale, rate limits,
 // packet cadence and safety caps. Pure types, no runtime code.
 
-export type DeviceKind = "lovense" | "coyote-v2" | "coyote-v3";
+export type DeviceKind = "lovense" | "coyote-v2" | "coyote-v3" | "tcode" | "piupiu";
 
 /** What the script asks for at one instant, already multiplied by the hook gain. */
 export interface DriveFrame {
@@ -70,6 +70,91 @@ export interface ToyDevice {
   readonly selfReconnects?: boolean;
   /** Optional: release timers and listeners (the manager calls it on dispose). */
   dispose?(): void;
+  /**
+   * Optional: what a script channel can be mapped to on this device, for the
+   * scene tab (TCode: the preset's active axes L0, R0…; Coyote: a, b, balance,
+   * intensity, speed; Lovense: intensity).
+   */
+  mappingTargets?(): readonly MappingTarget[];
+  /** Optional: the mapping to use when the scene has no saved one for this device. */
+  defaultMapping?(channels: readonly ScriptChannel[]): Record<string, ChannelMapping>;
+  /** Optional: extra actions for the device menu (TCode: Home, Motion on/off). */
+  actions?(): readonly DeviceAction[];
+  /**
+   * Optional: a React component (props: { device }) rendered on /toysync for
+   * device-specific settings (TCode: preset, per-axis range / invert / speed).
+   * Typed unknown to keep this file free of React types.
+   */
+  readonly settingsPanel?: unknown;
+  /** Optional: a React component (props: { device, program }) for the scene tab (TCode: 3D preview). */
+  readonly preview?: unknown;
+}
+
+// --- per-scene mapping and self-timed devices -------------------------------------------
+
+/** One channel of the scene's funscript: "stroke" is the main axis, others use their axis/channel id. */
+export interface ScriptChannel {
+  id: string;
+  /** positions 0..100 with the file's `range` applied, not inverted (raw script positions) */
+  actions: readonly { at: number; pos: number }[];
+}
+
+/** How one script channel drives one device target. min/max are the 0..100 window the channel is lerped into. */
+export interface ChannelMapping {
+  target: string;
+  invert?: boolean;
+  min?: number;
+  max?: number;
+}
+
+export interface MappingTarget {
+  id: string;
+  label: string;
+  /** for grouping in the picker, e.g. "Linear", "Rotation", "Auxiliary" */
+  group?: string;
+}
+
+export interface DeviceAction {
+  id: string;
+  label: string;
+  run(): void;
+}
+
+export type PlaybackEvent = "play" | "pause" | "seek" | "ended" | "scene";
+
+/** Live playback for drivers that time their own output (TCode sends frames every ~10–20 ms). */
+export interface PlaybackClock {
+  /** the scene's script time in ms now: video time × 1000 plus the scene offset and the latency setting; undefined without a video */
+  scriptMs(): number | undefined;
+  /** the video is playing (not paused, ended, seeking or waiting) */
+  playing(): boolean;
+  /** returns an unsubscribe */
+  onChange(cb: (e: PlaybackEvent) => void): () => void;
+}
+
+/** What a self-timed device gets for the open scene. */
+export interface DeviceProgram {
+  sceneId: string;
+  clock: PlaybackClock;
+  /** every channel of the scene's funscript */
+  channels: readonly ScriptChannel[];
+  /** this device's mapping for the scene: channel id → mapping (a channel absent here isn't used by this device) */
+  mapping: Readonly<Record<string, ChannelMapping>>;
+  /** per-scene options for this device kind (e.g. TCode "generate") */
+  options?: Readonly<Record<string, unknown>>;
+  /** the hook gain now, 0..1 (informational) */
+  gain(): number;
+}
+
+/**
+ * Devices that read the script and the clock themselves instead of receiving
+ * DriveFrames (the manager never calls drive() on them with frames; it calls
+ * setProgram when a scene opens, its mapping changes or it closes).
+ */
+export interface SelfTimedDevice extends ToyDevice {
+  readonly selfTimed: true;
+  /** the open scene's program, or null when no scene is open or it has no script */
+  setProgram(program: DeviceProgram | null): void;
 }
 
 /** E-stim style devices also implement this for the calibration page. */

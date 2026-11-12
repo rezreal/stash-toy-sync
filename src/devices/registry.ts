@@ -44,6 +44,8 @@ export const DEFAULT_DRIVER_INFO: Record<DeviceKind, DriverInfo> = {
   lovense: { label: "Lovense", description: "Vibrator, one motor level (0–20)" },
   "coyote-v2": { label: "DG-Lab Coyote 2.0", description: "E-stim, two channels" },
   "coyote-v3": { label: "DG-Lab Coyote 3.0", description: "E-stim, two channels" },
+  tcode: { label: "TCode device", description: "OSR2 / SR6 / SSR1 over USB serial" },
+  piupiu: { label: "Hismith PiuPiu", description: "Lube launcher" },
 };
 
 export function createDriverRegistry(): DriverRegistry {
