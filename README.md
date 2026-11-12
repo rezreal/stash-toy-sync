@@ -18,10 +18,11 @@ Devices:
   plug in through the same registry as self-timed devices (see *For driver
   authors*).
 
-Several devices can be connected at once and all follow the scene's script;
-each scene can say per device which script channel drives what (the scene
-page's **Interactive** tab). It never touches stash's Handy/interactive
-client; both can run side by side.
+Several devices can be connected at once, also several of the same kind (two
+Coyotes, two Lovense toys, two strokers; see *Several devices of one kind*),
+and all follow the scene's script; each scene can say per device which
+script channel drives what (the scene page's **Interactive** tab). It never
+touches stash's Handy/interactive client; both can run side by side.
 
 ## Coming from TCode Player
 
@@ -76,8 +77,9 @@ An icon in stash's navbar (next to the other utility icons) with a status
 dot: grey = nothing connected, green = connected, glowing = a device is
 outputting. It opens a panel with:
 
-- every registered device: name, state, **Connect / Disconnect**, and the
-  driver's own actions (TCode: Home, Motion on/off);
+- every device by its name (several of one kind are listed separately):
+  state, **Connect / Disconnect**, and the driver's own actions (TCode: Home,
+  Motion on/off);
 - **Stop all**: outputs 0 on every device and disconnects them (like Stop
   under the player);
 - links to the devices page and the calibration page.
@@ -94,9 +96,9 @@ A tab next to stash's own scene tabs. For the open scene:
   follows the video.
 - **Scene offset (ms)**: shifts the script against the video for this scene
   (positive = devices run earlier; adds to *Latency compensation*).
-- Per registered device (connected or not), its state, live output meters,
-  Connect / Disconnect, its preview (TCode: the 3D view) and one row per
-  channel:
+- Per device (connected or not; two Coyotes are two sections, by name), its
+  state, live output meters, Connect / Disconnect, its preview (TCode: the 3D
+  view) and one row per channel:
   - **Target**: what the channel drives on this device (the device's own
     targets, grouped; or Off). Lovense: Vibration. Coyote: Auto, Intensity,
     Channel A, Channel B, Balance A↔B, Pulse frequency. TCode: its axes.
@@ -116,10 +118,10 @@ Shown for interactive scenes, and on any scene while a device is connected
 (it also binds the scene: script, saved mapping and clock):
 
 - **Toy Sync**: link to the devices page.
-- Each connected device: name, battery %, and a live output meter (one, or
-  A and B for two-channel devices).
-- **Connect …** buttons while nothing is connected (the click is the user
-  gesture the Bluetooth picker needs).
+- Each connected device: its name, battery %, and a live output meter (one,
+  or A and B for two-channel devices).
+- **Connect …** buttons (one per device) while nothing is connected (the
+  click is the user gesture the Bluetooth picker needs).
 - **Calibrate …** when an e-stim device needs calibration first.
 - **Stop**: outputs 0 on every device, disconnects them all and stops
   reconnecting.
@@ -128,17 +130,26 @@ Shown for interactive scenes, and on any scene while a device is connected
 
 ### `/toysync`: devices and mapping
 
-- Every supported device kind with **Connect / Disconnect / Test / Stop**,
+- Every supported device kind, with a card per device of that kind:
+  its name (**Rename** in place), **Connect / Disconnect / Test / Stop**,
   status, battery, live meters per channel, the stored calibration and a
   **Calibrate** link for e-stim devices (highlighted when calibration is
   needed), the driver's own actions and settings panel (TCode: preset and
   axis limits), and for self-timed devices which scene they are playing.
+  **Add another …** adds a device of that kind; **Remove** (on every device
+  but the first of a kind, after a confirmation) disconnects it and forgets
+  it in this browser.
 - How scripts drive the devices, and the default mapping of the open or last
   scene (which axis feeds intensity, balance, speed, channel A and B).
 - A summary of the current settings (they live in Settings › Plugins ›
   Toy Sync).
 
-### `/toysync/calibrate?device=<kind>&channel=a|b&step=1..4|review`
+### `/toysync/calibrate?device=<device id>&channel=a|b&step=1..4|review`
+
+`device` is the device's id (`coyote-v3`, `coyote-v3:2`, see *Several
+devices of one kind*); links with just the kind open the first device of
+that kind.
+
 
 The calibration wizard for e-stim devices, on its own page, one channel at a
 time. Each step has a level control (− / + and a slider, shown as the raw
@@ -163,7 +174,8 @@ Every step, channel or device change is a browser history entry, so back,
 forward and reload return to the same step; invalid parameters are corrected
 in place. Levels picked so far are kept for the tab (sessionStorage); saved
 calibrations live in the browser's localStorage under
-`toysync.calibration.<kind>.<device id>`, per physical device. Channel A is
+`toysync.calibration.<kind>.<physical id>`, per physical device (the
+Bluetooth id), whichever Toy Sync device it is connected as. Channel A is
 calibrated first; channel B is saved next to it. If no e-stim device is
 connected, the page says so and links to `/toysync`.
 
@@ -185,14 +197,17 @@ edit by hand:
                    "options": { "generate": "gentle" } } } }
 ```
 
-- `devices` is keyed by device kind (`lovense`, `coyote-v2`, `coyote-v3`,
-  `tcode`, `piupiu`); `mapping` by script channel id (lowercase; `stroke` =
-  the main axis).
+- `devices` is keyed by device id: the kind for the first device of a kind
+  (`lovense`, `coyote-v2`, `coyote-v3`, `tcode`, `piupiu`), `<kind>:2`,
+  `<kind>:3`, … for further ones (`"coyote-v3:2": { … }`); `mapping` by script
+  channel id (lowercase; `stroke` = the main axis). Every device has its own
+  entry: a second Coyote never uses the first one's, and without an entry it
+  uses its driver's default.
 - An entry is `{ target, invert?, min?, max? }` (min/max 0–100, default 0 and
   100). Fields left out come from the device's default for that channel, so
   `{ "invert": true }` inverts the default target; `"target": "off"` switches
   the channel off for that device. Channels not listed keep the default.
-- `options` holds per-scene options of a device kind (TCode: `generate`, the
+- `options` holds per-scene options of a device (TCode: `generate`, the
   per-scene *Fill in missing axes* level). The tab shows them read-only.
 - `offsetMs` is the scene offset.
 
@@ -201,7 +216,7 @@ edit by hand:
 `{ axis, invert, min, max }` become `devices.tcode.mapping` entries
 (`axis` → `target`; TCode names like `R1` become channel `r1`; entries without
 `axis` keep the default axis), its `offsetMs` the scene offset and its
-`generate` `devices.tcode.options.generate`. TCode Player's older per-file
+`generate` `devices.tcode.options.generate` (the first TCode device). TCode Player's older per-file
 form (`{ "files": { "<oshash>": … } }`) uses the entry of the scene's first
 file (by oshash, then md5), else the first one. Save writes `toysync_map`;
 `tcode_map` is never written or removed. Use defaults + Save removes
@@ -209,13 +224,51 @@ file (by oshash, then md5), else the first one. Save writes `toysync_map`;
 `toysync_map` is written, so the old mapping doesn't come back on the next
 read.
 
+## Several devices of one kind
+
+Every device Toy Sync drives is a *device* entry of this browser, by
+default one per kind. **Add another …** on `/toysync` adds one more of that
+kind (two Coyotes, two Lovense toys, two TCode strokers, …).
+
+- **Ids.** The first device of a kind has the kind as its id (`coyote-v3`),
+  so everything saved before stays valid; further ones are `coyote-v3:2`,
+  `coyote-v3:3`, … (the lowest free number). Scene mappings and calibration
+  links use these ids, so they mean the same device in every browser that
+  set up its devices the same way.
+- **Names.** Each device has a name (default: the driver's name, then
+  "… 2", "… 3"); rename it on its card. Menus, the bar and the scene tab use
+  it.
+- **Per browser.** Which devices exist and their names live in this
+  browser's localStorage (`toysync.instances`), because the hardware belongs
+  to the machine. Without an entry there is one device per kind.
+- **Own device, own mapping.** Each device remembers its own physical
+  device and reconnects only that one: the first under the key used before
+  (`lovense.device`, `toysync.coyote-v3.device`, `toysync.tcode.port`,
+  `toysync.piupiu.device`), the others under `<that key>.<device id>`.
+  Only the first falls back to a granted device found by its Bluetooth name
+  (or TCode Player's remembered port / launcher). Each device has its own
+  per-scene mapping and, for TCode, its own profile (the first in the plugin
+  setting `tcodeProfile`, further ones in `tcodeProfiles`, a JSON object by
+  device id; a new one starts from the defaults).
+- **Never twice.** A physical device is held by one Toy Sync device at a
+  time: reconnecting skips devices another one holds, and picking one that
+  is already connected elsewhere is refused (`Already connected as "…"`).
+  Web Serial has no id that tells two identical boards apart, so two TCode
+  devices remember the board type and each takes the first matching port
+  that isn't open yet.
+- **Remove** disconnects the device (0 first), forgets which physical
+  device it was and frees it; its calibration stays stored (per physical
+  device), scenes keep its saved mapping. The first device of a kind can't
+  be removed.
+- Nudges, *Stop*, *Stop all* and the gain reach every device.
+
 ## How the script becomes output
 
 The funscript is fetched from stash (`/scene/{id}/funscript`, relative to
 stash's base URL) for scenes marked interactive. Self-timed devices (TCode,
 PiuPiu) read the script and the video's position themselves. For the others,
 every ~50 ms the plugin turns the script into a **frame** for this instant,
-one per device kind from that device's mapping (the default mapping gives
+one per device from that device's mapping (the default mapping gives
 every device the same frame), which each device reads in its own way:
 
 | Part | Range | From the main stroke | Used by |
@@ -365,7 +418,8 @@ count towards the limits.
 ```js
 window.addEventListener("toysync:status", (e) => {
   const s = e.detail;
-  // { devices: [{ kind: "lovense" | "coyote-v2" | "coyote-v3", id,
+  // { devices: [{ instanceId: "coyote-v3" | "coyote-v3:2" | …, name: "Left",
+  //               kind: "lovense" | "coyote-v2" | "coyote-v3" | "tcode" | "piupiu", id,
   //               status: { connection: "disconnected" | "connecting" | "connected" | "error",
   //                         device?, battery?, message?, output?: { a, b? }, needsCalibration? } }],
   //   frame: { intensity, balance, speed, a?, b?, gain? } | null,   // null = silence
@@ -373,7 +427,10 @@ window.addEventListener("toysync:status", (e) => {
 });
 ```
 
-Dispatched whenever a device's status, the gain, or silence/output changes;
+`devices` has one entry per device, also several of one kind;
+`instanceId` is the device id (see *Several devices of one kind*), `name`
+its name, `id` the physical device. Dispatched whenever a device's status
+(or name), the gain, or silence/output changes;
 changes of the output alone (frame values, meters) at most 5 times per
 second, the latest always delivered.
 
@@ -383,6 +440,7 @@ second, the latest always delivered.
 window.stashToySync.version            // 2
 window.stashToySync.status()           // the status object above
 window.stashToySync.connect("lovense") // from a click handler: may open the Bluetooth picker
+window.stashToySync.connect("coyote-v3:2") // a device id works too; a kind means its first device
 ```
 
 **Legacy (Lovense Sync 0.1), for this version only:** `lovense:status` (the
@@ -428,12 +486,26 @@ registerDriver("coyote-v3", (ctx) => createCoyoteV3(ctx), { label: "DG-Lab Coyot
 
 and `src/index.tsx` imports that module (the spot is marked). The factory gets
 a `DriverContext`: `settings()` (the parsed settings, e.g. `estimSpeedMinHz`),
-`onSettings(cb)`, `timers` and `now`. The `DeviceManager` creates one device
-per kind, calls `drive(frame | null)` from every engine tick (about every
-50 ms while a scene plays, plus right away on pause, seek and gain changes;
-not at all while no scene page is open), fans nudges and stops out, and
-retries a dropped link with `resume()` unless the driver sets
-`selfReconnects`. `src/devices/estim.ts` (`channelIntensities`,
+`onSettings(cb)`, `timers`, `now`, and per device:
+
+- `instance`: `{ id, name, ordinal }` (`"coyote-v3:2"`, its current name, 2;
+  ordinal 1 = the first of its kind). Keep anything remembered per device
+  apart with `instanceStorageKey(key, ctx.instance)` from
+  `src/devices/instances.ts` (the first keeps `key`, so upgrades forget
+  nothing).
+- `claims`: the page-wide registry of which device holds which physical
+  device (`isClaimed(key, byInstance?)`, `claim(key, instanceId)`,
+  `release(key, instanceId)`; `src/devices/claims.ts`, `instanceClaims()`
+  binds it to one instance). Claim the physical id when picking a device,
+  release it on disconnect and dispose, skip devices another instance holds
+  when reconnecting on your own, and refuse a picked one with
+  `alreadyConnectedMessage(name)`.
+
+The `DeviceManager` calls the factory once per device of that kind, calls
+`drive(frame | null)` from every engine tick (about every 50 ms while a
+scene plays, plus right away on pause, seek and gain changes; not at all
+while no scene page is open), fans nudges and stops out, and retries a
+dropped link with `resume()` unless the driver sets `selfReconnects`. `src/devices/estim.ts` (`channelIntensities`,
 `channelLevels`, `estimFrequencyHz`) and `src/devices/calibration.ts`
 (`levelFor`, `validateCalibration`, `loadCalibration` / `saveCalibration`)
 hold the shared e-stim maths and storage.
@@ -448,6 +520,7 @@ hold the shared e-stim maths and storage.
 | `settingsPanel` (React component, props `{ device }`) | rendered in the device's card on `/toysync` |
 | `preview` (React component, props `{ device, program }`) | rendered in the device's section of the Interactive tab (`program` is the device's `DeviceProgram` or null) |
 | `testChannel(channelId)` | the Interactive tab's per-channel Test button; without it the button calls `test()` |
+| `forget()` | removing a device on `/toysync`: drop the remembered physical device (called after `disconnect()`, before `dispose()`) |
 
 **Self-timed devices** (`selfTimed: true`, `SelfTimedDevice`) time their own
 output (TCode sends every 10–20 ms) and never get frames. Instead the manager
@@ -455,7 +528,8 @@ calls `setProgram(program)` when a scene with a script opens, whenever the
 program changes (a live edit in the Interactive tab, a different script, the
 device's options), and `setProgram(null)` when the scene closes or has no
 script; an unchanged program isn't sent again. A `DeviceProgram` is
-`{ sceneId, clock, channels, mapping, options?, gain() }`: `channels` are
+`{ sceneId, clock, channels, mapping, options?, gain() }` (mapping and options
+are that device's own): `channels` are
 every `ScriptChannel` of the funscript (`stroke` with the file's `range`
 applied and its `inverted` flag kept as `inverted`; embedded axes with their
 own range/inverted applied by the parser), `mapping` the device's effective

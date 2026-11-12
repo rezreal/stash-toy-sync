@@ -7,6 +7,11 @@
 //       "tcode":     { "mapping": { "pitch": { "target": "R2", "invert": true, "min": 20, "max": 80 } },
 //                      "options": { "generate": "gentle" } } } }
 //
+// `devices` is keyed by device instance id (src/devices/instances.ts): the
+// kind for the first device of a kind, "coyote-v3:2" … for further ones, so
+// maps saved before instances still belong to the first device. Every
+// instance has its own entry; nothing falls back to another instance's.
+//
 // A device's mapping holds overrides per script channel: a channel listed
 // there uses that entry (missing fields come from the device's default for
 // the channel; no target at all = the default target, "off" switches it
@@ -14,9 +19,10 @@
 //
 // Reading: `toysync_map` when present; else `tcode_map` (TCode Player) is
 // migrated in memory: its per-channel { axis, invert, min, max } diffs become
-// devices.tcode.mapping (axis -> target), offsetMs -> offsetMs, generate ->
-// devices.tcode.options.generate; the legacy { files: { <fileKey>: … } }
-// form picks the entry of the scene's first file, else the first entry.
+// devices.tcode.mapping (the first TCode instance; axis -> target),
+// offsetMs -> offsetMs, generate -> devices.tcode.options.generate; the
+// legacy { files: { <fileKey>: … } } form picks the entry of the scene's
+// first file, else the first entry.
 // tcode_map is never written or removed.
 import type { ChannelMapping } from "../devices/types.ts";
 

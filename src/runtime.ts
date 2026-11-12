@@ -1,6 +1,7 @@
 // The page-wide objects: the settings, the devices (one per device instance:
-// by default one per registered driver), one gain combiner, one sync engine, the playback clock, the open
-// scene's mapping and the binder that applies it. They outlive scene changes
+// by default one per registered driver), one gain combiner, one sync engine,
+// the playback clock, the open scene's mapping and the binder that applies
+// it. They outlive scene changes
 // (stash keeps the scene player mounted across scenes) and are shared with
 // the hook contract, the scene tab, the navbar menu and the pages.
 import { createDeviceManager, type DeviceManager } from "./devices/manager.ts";

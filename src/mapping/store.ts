@@ -49,11 +49,11 @@ export interface SceneMapStore {
   /** the scene closed (only if it is the bound one) */
   unbind(sceneId: string): void;
   state(): SceneMapState | undefined;
-  /** sets (or with undefined resets to the default) one channel of one device kind */
-  setChannel(kind: DeviceKind | string, channelId: string, entry: ChannelOverride | undefined): void;
+  /** sets (or with undefined resets to the default) one channel of one device instance (its id; the kind for the first) */
+  setChannel(instanceId: DeviceKind | string, channelId: string, entry: ChannelOverride | undefined): void;
   setOffset(ms: number): void;
-  /** replaces a device kind's options (undefined removes them) */
-  setOptions(kind: DeviceKind | string, options: Record<string, unknown> | undefined): void;
+  /** replaces a device instance's options (undefined removes them) */
+  setOptions(instanceId: DeviceKind | string, options: Record<string, unknown> | undefined): void;
   /** every device back to its default, offset 0 (saved on Save) */
   useDefaults(): void;
   /** back to what is saved */
