@@ -57,6 +57,9 @@ import type {
   ToyDevice,
 } from "./types.ts";
 
+/** how long first instances wait for extra instances to claim their remembered devices on resume */
+export const RESUME_HEAD_START_MS = 1000;
+
 export interface DeviceEntry {
   /** "coyote-v3", "coyote-v3:2", … */
   instanceId: string;
@@ -412,16 +415,32 @@ export function createDeviceManager(opts: DeviceManagerOptions): DeviceManager {
     },
     async resumeAll() {
       for (const inst of visible()) slotFor(inst.instanceId);
-      await Promise.all(
-        [...slots.values()].map(async (slot) => {
-          if (typeof slot.device.resume !== "function") return;
-          try {
-            await slot.device.resume();
-          } catch (err) {
-            console.error(`[toysync] resuming ${slot.instanceId} failed`, err);
-          }
-        }),
-      );
+      const resume = async (slot: Slot): Promise<void> => {
+        if (typeof slot.device.resume !== "function") return;
+        try {
+          await slot.device.resume();
+        } catch (err) {
+          console.error(`[toysync] resuming ${slot.instanceId} failed`, err);
+        }
+      };
+      // Extra instances only take their own remembered device and claim it
+      // as soon as they find it (before connecting). Starting them first keeps
+      // a first instance with nothing remembered from taking it by name.
+      const all = [...slots.values()];
+      const extras = all.filter((s) => s.instanceId !== s.device.kind);
+      const firsts = all.filter((s) => s.instanceId === s.device.kind);
+      const extraRun = Promise.all(extras.map(resume));
+      if (extras.length > 0) {
+        let timer: unknown;
+        await Promise.race([
+          extraRun,
+          new Promise<void>((done) => {
+            timer = timers.setTimeout(done, RESUME_HEAD_START_MS);
+          }),
+        ]);
+        if (timer !== undefined) timers.clearTimeout(timer);
+      }
+      await Promise.all([extraRun, ...firsts.map(resume)]);
     },
     driveAll(frame, perInstance) {
       for (const slot of slots.values()) {

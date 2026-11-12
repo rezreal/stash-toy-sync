@@ -183,6 +183,24 @@ describe("device instances in the manager", () => {
     assert.ok(t.dev("coyote-v3:2").calls.includes("disconnect"));
   });
 
+  it("resumeAll() lets extra instances claim their own device before the first instance looks by name", async () => {
+    const t = setup();
+    t.manager.addInstance("coyote-v3");
+    const extra = t.dev("coyote-v3:2");
+    extra.resume = () => {
+      extra.calls.push("resume");
+      return new Promise<void>(() => undefined); // still connecting
+    };
+    const done = t.manager.resumeAll();
+    await flush();
+    assert.deepEqual(extra.calls, ["resume"]);
+    assert.deepEqual(t.dev("coyote-v3").calls, [], "the first instance waits");
+    t.clock.advance(1000);
+    await flush();
+    assert.deepEqual(t.dev("coyote-v3").calls, ["resume"], "at most a second");
+    void done;
+  });
+
   it("resumeAll() resumes every instance", async () => {
     const t = setup();
     t.manager.addInstance("coyote-v3");
