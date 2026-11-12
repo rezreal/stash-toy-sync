@@ -5,6 +5,11 @@
 // ("GATT operation already in progress"). Same shape as the Lovense device
 // (src/lovense/device.ts): globals injectable, connect() never rejects,
 // every failure ends up in status() with a message that says what to do.
+//
+// Several Coyotes (one link per Toy Sync instance): each instance remembers
+// its own device (storageKey) and claims the device it picks (claims), so it
+// never takes, reuses or closes a Coyote another instance holds; a picked one
+// that is already connected as another instance is refused with a message.
 import type {
   Bluetooth,
   BluetoothCharacteristicProperties,
@@ -14,6 +19,7 @@ import type {
   RequestDeviceOptions,
 } from "../lovense/bluetooth.d.ts";
 import type { StorageLike } from "../devices/calibration.ts";
+import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
 import { createListeners, GLOBAL_TIMERS, type Timers } from "../util/timers.ts";
 
 export type Connection = "disconnected" | "connecting" | "connected" | "error";
@@ -81,6 +87,14 @@ export interface LinkOptions {
   secureContext?: boolean;
   batteryPollMs?: number;
   opTimeoutMs?: number;
+  /** which devices other instances hold (default: none) */
+  claims?: InstanceClaims;
+  /**
+   * With nothing remembered, take an already-granted device with this
+   * version's name without the picker (default true; only the first
+   * instance does, so an extra one never grabs a Coyote meant for another).
+   */
+  nameFallback?: boolean;
 }
 
 export interface CoyoteLink {
@@ -105,6 +119,10 @@ export interface CoyoteLink {
   onDrain(cb: () => void): () => void;
   readonly io: LinkIo;
   deviceId(): string | undefined;
+  /** forgets the remembered device (the instance was removed) */
+  forget(): void;
+  /** gives up this instance's claim on its device (dispose) */
+  release(): void;
 }
 
 export const DEFAULT_RECONNECT_DELAYS_MS = [500, 1000, 2000, 3000, 5000];
@@ -226,6 +244,16 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   const delays = opts.reconnectDelaysMs?.length ? opts.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
   const batteryPollMs = opts.batteryPollMs ?? DEFAULT_BATTERY_POLL_MS;
   const opTimeoutMs = opts.opTimeoutMs ?? OP_TIMEOUT_MS;
+  const claims: InstanceClaims = opts.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+  const nameFallback = opts.nameFallback ?? true;
+  const free = (id: string) => claims.heldByOther(id) === undefined;
+  /** the device this instance holds a claim on */
+  let claimed: string | undefined;
+
+  function releaseClaim(): void {
+    if (claimed !== undefined) claims.release(claimed);
+    claimed = undefined;
+  }
 
   const statusListeners = createListeners<LinkStatus>();
   const readyListeners = createListeners<void>();
@@ -394,6 +422,8 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   }
 
   function closeGatt(d: BluetoothDevice | undefined): void {
+    // never close a link another instance holds (one GATT connection per device in the page)
+    if (d && !free(d.id)) return;
     try {
       if (d?.gatt?.connected) d.gatt.disconnect();
     } catch {
@@ -494,13 +524,14 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
     const remembered = readStored();
     if (remembered) {
       const hit = devices.find((d) => d.id === remembered);
-      if (hit) return hit;
+      if (hit && free(hit.id)) return hit;
     }
-    return devices.find((d) => profile.isOwnName(d.name));
+    if (!nameFallback) return undefined;
+    return devices.find((d) => free(d.id) && profile.isOwnName(d.name));
   }
 
   async function chooseDevice(bt: Bluetooth, mode: StartMode, gen: number): Promise<BluetoothDevice | undefined> {
-    if (device && !mustPick) return device;
+    if (device && !mustPick && free(device.id)) return device;
     if (!mustPick && typeof bt.getDevices === "function") {
       try {
         const known = pickKnown(await bt.getDevices());
@@ -511,13 +542,16 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       if (gen !== generation) return undefined;
     }
     if (mode === "silent") return undefined;
+    let d: BluetoothDevice;
     try {
-      const d = await bt.requestDevice(profile.requestOptions());
-      mustPick = false;
-      return d;
+      d = await bt.requestDevice(profile.requestOptions());
     } catch (e) {
       throw new LinkFailure(pickErrorMessage(e, profile.notChosenMessage));
     }
+    mustPick = false;
+    const other = claims.heldByOther(d.id);
+    if (other !== undefined) throw new LinkFailure(alreadyConnectedMessage(other));
+    return d;
   }
 
   async function open(dev: BluetoothDevice, gen: number): Promise<boolean> {
@@ -575,6 +609,12 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         wanted = false; // silent resume with nothing granted: stay as we were
         return;
       }
+      if (!claims.claim(dev.id)) {
+        // taken by another instance meanwhile
+        throw new LinkFailure(alreadyConnectedMessage(claims.heldByOther(dev.id) ?? "another device"));
+      }
+      if (claimed !== dev.id) releaseClaim();
+      claimed = dev.id;
       if (dev !== device) {
         device?.removeEventListener("gattserverdisconnected", onGattDisconnected);
         device = dev;
@@ -601,6 +641,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       }
       wanted = false;
       closeGatt(device);
+      releaseClaim();
       if (mode === "silent") {
         const message = failure.retry ? `The ${profile.label} isn't reachable. Turn it on and click Connect.` : failure.message;
         setStatus({ connection: "disconnected", message });
@@ -656,6 +697,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       d?.removeEventListener("gattserverdisconnected", onGattDisconnected);
       closeGatt(d);
       d?.addEventListener("gattserverdisconnected", onGattDisconnected);
+      releaseClaim();
     },
     ready: () => up && isReady,
     status,
@@ -665,5 +707,9 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
     onDrain: (cb) => drainListeners.add(cb),
     io,
     deviceId: () => device?.id ?? readStored(),
+    forget() {
+      writeStored(undefined);
+    },
+    release: releaseClaim,
   };
 }

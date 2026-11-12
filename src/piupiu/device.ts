@@ -13,6 +13,12 @@
 // - Auto-connect (resume) only reconnects the launcher this plugin paired
 //   with, never one another plugin in the page already holds, and not at all
 //   while TCode Player is active in the page.
+// - One launcher per instance: the first instance keeps the old key
+//   ("toysync.piupiu.device", plus TCode Player's "tcp-lube"), others
+//   remember "toysync.piupiu.device.<instanceId>"; a launcher another
+//   instance holds is never taken (ctx.claims), a picked one is refused.
+import { alreadyConnectedMessage, instanceClaims, type InstanceClaims } from "../devices/claims.ts";
+import { instanceInfoOf, instanceStorageKey } from "../devices/instances.ts";
 import type { Bluetooth, BluetoothDevice, BluetoothRemoteGATTCharacteristic } from "../lovense/bluetooth.d.ts";
 import type { DriverContext } from "../devices/registry.ts";
 import type {
@@ -78,6 +84,8 @@ export interface PiupiuDeviceOptions {
   bluetooth?: Bluetooth | undefined;
   /** default localStorage, null = don't remember */
   storage?: StorageLike | null;
+  /** which launchers other instances hold; default ctx.claims for the context's instance */
+  claims?: InstanceClaims;
   timers?: IntervalTimers;
   oldPluginPresent?: () => boolean;
   log?: Pick<Console, "warn" | "info">;
@@ -107,9 +115,13 @@ function defaultStorage(): StorageLike | null {
   }
 }
 
-export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: PiupiuDeviceOptions = {}): PiupiuDevice {
+export function createPiupiuDevice(ctx: DriverContext | undefined, opts: PiupiuDeviceOptions = {}): PiupiuDevice {
   const bt = "bluetooth" in opts ? opts.bluetooth : navigatorBluetooth();
   const storage = opts.storage === undefined ? defaultStorage() : opts.storage;
+  const inst = instanceInfoOf(ctx, "piupiu");
+  const first = inst.ordinal <= 1;
+  const deviceKey = instanceStorageKey(DEVICE_KEY, inst);
+  const claims = opts.claims ?? instanceClaims(ctx?.claims, inst.id);
   const timers = opts.timers ?? GLOBAL_INTERVAL_TIMERS;
   const log = opts.log ?? console;
   const oldPluginPresent = opts.oldPluginPresent ?? (() => tcodePlayerPresent());
@@ -283,6 +295,7 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
   /* ---------- Bluetooth ---------- */
 
   function close(reason: string | null): void {
+    if (dev) claims.release(dev.id);
     if (dev && onGone) dev.removeEventListener("gattserverdisconnected", onGone);
     onGone = null;
     dev = null;
@@ -294,12 +307,19 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
   }
 
   async function open(device: BluetoothDevice, quiet: boolean): Promise<boolean> {
+    const other = claims.heldByOther(device.id);
+    if (other !== undefined) {
+      // another PiuPiu instance has it
+      if (!quiet) setConnection("error", alreadyConnectedMessage(other));
+      return false;
+    }
     if (device.gatt && device.gatt.connected) {
       // already connected in this page - another plugin is using it
       if (!quiet) setConnection("error", MSG_IN_USE);
       return false;
     }
     notice = null;
+    claims.claim(device.id);
     setConnection("connecting", null);
     try {
       const server = await device.gatt!.connect();
@@ -310,6 +330,7 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
       onGone = () => close(MSG_GONE);
       device.addEventListener("gattserverdisconnected", onGone);
     } catch (e) {
+      claims.release(device.id);
       try {
         if (device.gatt && device.gatt.connected) device.gatt.disconnect();
       } catch {
@@ -324,7 +345,7 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
       return false;
     }
     try {
-      storage?.setItem(DEVICE_KEY, device.id);
+      storage?.setItem(deviceKey, device.id);
     } catch {
       // not remembered: no auto-connect next time
     }
@@ -338,7 +359,7 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
     kind: "piupiu",
     selfTimed: true,
     get id() {
-      return dev?.id ?? read(DEVICE_KEY) ?? "piupiu";
+      return dev?.id ?? read(deviceKey) ?? (first ? "piupiu" : inst.id);
     },
     async connect() {
       if (!bt) {
@@ -368,11 +389,11 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
         return;
       }
       try {
-        const known = read(DEVICE_KEY) ?? read(LEGACY_DEVICE_KEY);
+        const known = read(deviceKey) ?? (first ? read(LEGACY_DEVICE_KEY) : null);
         if (!known || !bt.getDevices) return;
         const devices = await bt.getDevices();
         const found = devices.find((d) => d.id === known);
-        if (found && !(found.gatt && found.gatt.connected)) await open(found, true);
+        if (found && !(found.gatt && found.gatt.connected) && claims.heldByOther(found.id) === undefined) await open(found, true);
       } catch (e) {
         log.info("[toysync] lube launcher auto-connect skipped", e);
       }
@@ -470,7 +491,15 @@ export function createPiupiuDevice(_ctx: DriverContext | undefined, opts: Piupiu
       return out;
     },
     settingsPanel: opts.settingsPanel,
+    forget() {
+      try {
+        storage?.removeItem?.(deviceKey);
+      } catch {
+        // nothing to forget
+      }
+    },
     dispose() {
+      if (dev) claims.release(dev.id);
       unbindClock();
       if (tickTimer !== null) timers.clearInterval(tickTimer);
       tickTimer = null;

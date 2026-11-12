@@ -7,7 +7,13 @@
 // changed (the other keys are the plugin settings from toysync.yml).
 // The configuration query is sent with plain fetch, not through stash's
 // Apollo client, so it can't clobber the app's cached configuration.
-import { mergePluginConfig, readOtherPluginConfig, readPluginConfig } from "../stash/pluginConfig.ts";
+//
+// Several TCode devices: the first instance keeps "tcodeProfile"; every other
+// instance has its own profile in "tcodeProfiles", a JSON string mapping
+// instance id -> profile ({"tcode:2": {…}}). An extra instance without a
+// stored profile starts from the default (not a copy of the first one's) and
+// never imports TCode Player's.
+import { mergePluginConfig, readOtherPluginConfig, readPluginConfig, type PluginConfigOptions } from "../stash/pluginConfig.ts";
 import { stashUrl } from "../stash/url.ts";
 
 export interface TcodeProfileStore {
@@ -21,6 +27,8 @@ export interface TcodeProfileStore {
 
 export const PLUGIN_ID = "toysync";
 export const PROFILE_KEY = "tcodeProfile";
+/** the profiles of the second, third, … TCode instance: JSON { [instanceId]: profile } */
+export const PROFILES_KEY = "tcodeProfiles";
 export const LEGACY_PLUGIN_ID = "TCodePlayer";
 export const LEGACY_PROFILE_KEY = "profile";
 
@@ -102,22 +110,52 @@ export function createMemoryProfileStore(initial?: { profile?: unknown; legacy?:
   };
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** the tcodeProfiles map of a plugin config ({} when absent or unreadable) */
+export function readProfilesMap(cfg: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const map = parseJson(cfg[PROFILES_KEY]);
+  return isObj(map) ? { ...map } : {};
+}
+
 /**
  * The store the driver uses: the shared plugin-config helpers, which merge
  * one write at a time and refresh stash's cached configuration afterwards,
  * so saving the plugin's settings page later doesn't send back a stale map
- * without tcodeProfile.
+ * without tcodeProfile. `instanceId` (an instance after the first): that
+ * instance's entry in tcodeProfiles instead.
  */
-export function createSharedProfileStore(): TcodeProfileStore {
+export function createSharedProfileStore(instanceId?: string, opts: PluginConfigOptions = {}): TcodeProfileStore {
+  if (instanceId !== undefined) {
+    return {
+      async load() {
+        const entry = readProfilesMap(await readPluginConfig(PLUGIN_ID, opts))[instanceId];
+        return entry === undefined || entry === null ? undefined : entry;
+      },
+      async save(profile) {
+        await mergePluginConfig(
+          PLUGIN_ID,
+          (current) => {
+            const map = readProfilesMap(current);
+            map[instanceId] = JSON.parse(JSON.stringify(profile)) as unknown;
+            return { [PROFILES_KEY]: JSON.stringify(map) };
+          },
+          opts,
+        );
+      },
+      // TCode Player's profile belongs to the first instance only
+      loadLegacy: async () => undefined,
+    };
+  }
   return {
     async load() {
-      return parseJson((await readPluginConfig(PLUGIN_ID))[PROFILE_KEY]);
+      return parseJson((await readPluginConfig(PLUGIN_ID, opts))[PROFILE_KEY]);
     },
     async save(profile) {
-      await mergePluginConfig(PLUGIN_ID, { [PROFILE_KEY]: JSON.stringify(profile) });
+      await mergePluginConfig(PLUGIN_ID, { [PROFILE_KEY]: JSON.stringify(profile) }, opts);
     },
     async loadLegacy() {
-      return parseJson((await readOtherPluginConfig(LEGACY_PLUGIN_ID))[LEGACY_PROFILE_KEY]);
+      return parseJson((await readOtherPluginConfig(LEGACY_PLUGIN_ID, opts))[LEGACY_PROFILE_KEY]);
     },
   };
 }

@@ -11,12 +11,18 @@
 //   hardware stops by itself when packets stop is unverified, so silence is
 //   always sent explicitly - also on disconnect(), dispose() and pagehide.
 // - Nothing is output without a valid calibration (except calibration probes).
+// - One Coyote per instance: the first instance remembers its device under
+//   the old key ("toysync.<kind>.device"), others under
+//   "toysync.<kind>.device.<instanceId>"; devices other instances hold are
+//   never taken (ctx.claims). Calibration stays per physical device.
 import {
   loadCalibration,
   saveCalibration,
   validateCalibration,
   type StorageLike,
 } from "../devices/calibration.ts";
+import { instanceClaims } from "../devices/claims.ts";
+import { instanceStorageKey } from "../devices/instances.ts";
 import type { DriverContext } from "../devices/registry.ts";
 import type { Calibration, CalibratableDevice, DeviceStatus, DriveFrame } from "../devices/types.ts";
 import type { Bluetooth } from "../lovense/bluetooth.d.ts";
@@ -111,9 +117,13 @@ function defaultPageEvents(): PageEvents | undefined {
 export function createCoyoteDevice(ctx: DriverContext, transport: CoyoteTransport, opts: CoyoteDeviceOptions = {}): CoyoteDevice {
   const kind = transport.kind;
   const storage = opts.storage === null ? NO_STORAGE : opts.storage;
+  const inst = ctx.instance;
+  const first = !inst || inst.ordinal <= 1;
   const link: CoyoteLink = createCoyoteLink({
     profile: transport,
-    storageKey: `toysync.${kind}.device`,
+    storageKey: instanceStorageKey(`toysync.${kind}.device`, inst),
+    claims: instanceClaims(ctx.claims, inst?.id ?? kind),
+    nameFallback: first,
     timers: ctx.timers,
     ...(opts.bluetooth ? { bluetooth: opts.bluetooth } : {}),
     ...(opts.storage !== undefined ? { storage: opts.storage } : {}),
@@ -142,7 +152,8 @@ export function createCoyoteDevice(ctx: DriverContext, transport: CoyoteTranspor
     ? opts.ticker(() => tick(), TICK_MS)
     : createTicker(() => tick(), TICK_MS, { timers: ctx.timers, ...(opts.worker !== undefined ? { worker: opts.worker } : {}) });
 
-  const id = (): string => link.deviceId() ?? kind;
+  // before the first connect: the instance id (the kind for the first instance, as before)
+  const id = (): string => link.deviceId() ?? (first ? kind : inst.id);
 
   function storedCalibration(): Calibration | undefined {
     const key = id();
@@ -370,11 +381,12 @@ export function createCoyoteDevice(ctx: DriverContext, transport: CoyoteTranspor
     mappingTargets: () => ESTIM_TARGETS,
     defaultMapping: (channels) => driveDefaultMapping(channels, ctx.settings().axisMap, ESTIM_TARGETS.map((t) => t.id)),
     lastPlan: () => plan,
+    forget: () => link.forget(),
     dispose() {
       if (disposed) return;
       clearAll();
       stopStreaming();
-      void link.disconnect(() => transport.zero(ctx.now()));
+      void link.disconnect(() => transport.zero(ctx.now())).finally(() => link.release());
       disposed = true;
       ticker.dispose();
       page?.removeEventListener("pagehide", onPageHide);

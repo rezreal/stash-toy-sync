@@ -5,10 +5,15 @@
 //   the intensity is above 0 (never above what Strength × gain allow).
 // Strength is a hard cap on everything, including Test. Vibrators ignore
 // balance, speed and the direct channels; they have no nudge.
+// One toy per instance: the first instance remembers its toy under the old
+// key ("lovense.device"), others under "lovense.device.<instanceId>"; toys
+// other instances hold are never taken (ctx.claims).
+import { instanceClaims } from "../devices/claims.ts";
+import { instanceStorageKey } from "../devices/instances.ts";
 import type { DriverContext } from "../devices/registry.ts";
 import type { DeviceStatus, DriveFrame, ToyDevice } from "../devices/types.ts";
 import { driveDefaultMapping, VIBRATOR_TARGETS } from "../mapping/targets.ts";
-import { createLovenseDevice, type LovenseDevice, type LovenseDeviceOptions, type LovenseStatus } from "./device.ts";
+import { createLovenseDevice, DEVICE_KEY, type LovenseDevice, type LovenseDeviceOptions, type LovenseStatus } from "./device.ts";
 import { MAX_LEVEL } from "./protocol.ts";
 
 export const TEST_LEVEL = 10;
@@ -78,9 +83,19 @@ export interface LovenseToyOptions {
 }
 
 export function createLovenseToy(ctx: DriverContext, opts: LovenseToyOptions = {}): LovenseToy {
+  const inst = ctx.instance;
+  const first = !inst || inst.ordinal <= 1;
   const dev =
     opts.device ??
-    createLovenseDevice({ timers: ctx.timers, now: ctx.now, namePrefix: ctx.settings().namePrefix, ...opts.deviceOptions });
+    createLovenseDevice({
+      timers: ctx.timers,
+      now: ctx.now,
+      namePrefix: ctx.settings().namePrefix,
+      storageKey: instanceStorageKey(DEVICE_KEY, inst),
+      claims: instanceClaims(ctx.claims, inst?.id ?? "lovense"),
+      nameFallback: first,
+      ...opts.deviceOptions,
+    });
   let frame: DriveFrame | null = null;
   let testUntil = -Infinity;
   let testTimer: unknown;
@@ -113,7 +128,7 @@ export function createLovenseToy(ctx: DriverContext, opts: LovenseToyOptions = {
   return {
     kind: "lovense",
     get id() {
-      return dev.deviceId() ?? "lovense";
+      return dev.deviceId() ?? (first ? "lovense" : inst.id);
     },
     selfReconnects: true,
     connect: () => dev.connect(),
@@ -155,9 +170,11 @@ export function createLovenseToy(ctx: DriverContext, opts: LovenseToyOptions = {
     legacyStatus: () => dev.status(),
     onLegacyStatus: (cb) => dev.onStatus(cb),
     level: () => level,
+    forget: () => dev.forget(),
     dispose() {
       cancelTest();
       stopSettings();
+      dev.release();
     },
   };
 }

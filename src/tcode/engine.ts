@@ -20,6 +20,14 @@
 // mapping comes from the program, and the lube launcher is its own device
 // (src/piupiu); the engine only tracks whether A2 asks for lube, for the
 // droplet on the preview.
+//
+// Several TCode devices (one engine per Toy Sync instance): each remembers
+// its own port (portKey) and claims the port it opens. Web Serial has no
+// stable per-device id (getInfo() only gives the USB vendor / product, the
+// same for two identical boards), so the claim key is per SerialPort object
+// in this page (portClaimKey); a remembered port matches by getInfo(), and
+// auto-connect takes the first matching port that isn't open or held.
+import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
 import type { DeviceProgram, PlaybackEvent } from "../devices/types.ts";
 import {
   applyAxisCaps,
@@ -81,6 +89,7 @@ export const GLOBAL_INTERVAL_TIMERS: IntervalTimers = {
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 /** a 3D preview (osr-emu): takes the same TCode lines as the device */
@@ -104,6 +113,12 @@ export interface EngineEnv {
   log?: Pick<Console, "warn" | "info">;
   /** TCode Player is active in this page (auto-connect stays off) */
   oldPluginPresent?: () => boolean;
+  /** where the port is remembered; default PORT_KEY (the first instance's key) */
+  portKey?: string;
+  /** TCode Player's port key, read once it is gone; default LEGACY_PORT_KEY, null = never (instances after the first) */
+  legacyPortKey?: string | null;
+  /** which ports other instances hold (default: none) */
+  claims?: InstanceClaims;
 }
 
 export type Connection = "disconnected" | "connecting" | "connected" | "error";
@@ -158,6 +173,20 @@ interface FrameStats {
 
 const encoder = new TextEncoder();
 
+const portKeys = new WeakMap<object, string>();
+let portSeq = 0;
+
+/**
+ * The claim key of a serial port: one per SerialPort object in this page
+ * (the browser hands out the same object for the same port), since Web
+ * Serial has no stable id that tells two identical boards apart.
+ */
+export function portClaimKey(port: SerialPortLike): string {
+  let key = portKeys.get(port);
+  if (key === undefined) portKeys.set(port, (key = `serial-port:${++portSeq}`));
+  return key;
+}
+
 export function portId(port: SerialPortLike): string {
   try {
     return JSON.stringify(port.getInfo());
@@ -195,6 +224,9 @@ export class TcodeEngine {
   readonly oldPluginPresent: () => boolean;
   readonly now: () => number;
   readonly wallNow: () => number;
+  readonly portKey: string;
+  readonly legacyPortKey: string | null;
+  readonly claims: InstanceClaims;
 
   _listeners = new Set<() => void>();
   _emus = new Set<Emulator>();
@@ -238,6 +270,9 @@ export class TcodeEngine {
     this.oldPluginPresent = env.oldPluginPresent ?? (() => false);
     this.now = env.now ?? (() => globalThis.performance.now());
     this.wallNow = env.wallNow ?? (() => Date.now());
+    this.portKey = env.portKey ?? PORT_KEY;
+    this.legacyPortKey = env.legacyPortKey === undefined ? LEGACY_PORT_KEY : env.legacyPortKey;
+    this.claims = env.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
     const secure = env.secure ?? !!(globalThis as { isSecureContext?: boolean }).isSecureContext;
     this.state = {
       supported: !!this.serial,
@@ -301,9 +336,18 @@ export class TcodeEngine {
 
   rememberedPort(): string | null {
     try {
-      return this.storage?.getItem(PORT_KEY) || null;
+      return this.storage?.getItem(this.portKey) || null;
     } catch {
       return null;
+    }
+  }
+
+  /** forgets the remembered port (the instance was removed) */
+  forgetPort(): void {
+    try {
+      this.storage?.removeItem?.(this.portKey);
+    } catch {
+      // nothing to forget
     }
   }
 
@@ -337,9 +381,9 @@ export class TcodeEngine {
     }
     try {
       let known = this.rememberedPort();
-      if (!known) {
+      if (!known && this.legacyPortKey) {
         try {
-          known = this.storage?.getItem(LEGACY_PORT_KEY) || null;
+          known = this.storage?.getItem(this.legacyPortKey) || null;
         } catch {
           known = null;
         }
@@ -348,7 +392,7 @@ export class TcodeEngine {
       const ports = await this.serial.getPorts();
       for (const port of ports) {
         if (this.state.status !== "disconnected" && this.state.status !== "error") return;
-        if (port.readable || portId(port) !== known) continue;
+        if (port.readable || portId(port) !== known || this.claims.heldByOther(portClaimKey(port)) !== undefined) continue;
         if (await this._open(port, true)) return;
       }
     } catch (e) {
@@ -357,6 +401,13 @@ export class TcodeEngine {
   }
 
   async _open(port: SerialPortLike, quiet = false, reopening = false): Promise<boolean> {
+    const claimKey = portClaimKey(port);
+    const other = this.claims.heldByOther(claimKey);
+    if (other !== undefined) {
+      // another TCode instance drives this port
+      if (!quiet) this.set({ status: "error", error: alreadyConnectedMessage(other) });
+      return false;
+    }
     if (port.readable) {
       // opened by someone else in this page
       if (!quiet) this.set({ status: "error", error: MSG_PORT_IN_USE });
@@ -368,9 +419,11 @@ export class TcodeEngine {
         ? { status: "connecting", error: null }
         : { status: "connecting", error: null, notice: null, deviceInfo: null, deviceLog: [] },
     );
+    this.claims.claim(claimKey);
     try {
       await port.open({ baudRate: this.state.profile.baud });
     } catch (e) {
+      this.claims.release(claimKey);
       if (quiet) {
         this.log.info("[toysync] remembered TCode port is busy, not auto-connecting", e);
         this.set({ status: "disconnected" });
@@ -380,7 +433,7 @@ export class TcodeEngine {
       return false;
     }
     try {
-      this.storage?.setItem(PORT_KEY, portId(port));
+      this.storage?.setItem(this.portKey, portId(port));
     } catch {
       // not remembered: auto-connect won't find it
     }
@@ -477,6 +530,7 @@ export class TcodeEngine {
     } catch {
       /* ignore */
     }
+    if (port) this.claims.release(portClaimKey(port));
     this._reader = null;
     this._writer = null;
     this._writable = null;
@@ -917,6 +971,7 @@ export class TcodeEngine {
   }
 
   dispose(): void {
+    if (this._port) this.claims.release(portClaimKey(this._port));
     this._unbindClock();
     this._stopTimer();
     if (this.serial && this._onSerialDisconnect) this.serial.removeEventListener?.("disconnect", this._onSerialDisconnect);

@@ -49,16 +49,23 @@ const queues = new Map<string, Promise<unknown>>();
 /**
  * Reads the plugin's current settings, applies `patch` (a key set to
  * undefined is removed) and writes the whole map back. Resolves with the map
- * stash stored. Calls for the same plugin are serialized.
+ * stash stored. Calls for the same plugin are serialized. `patch` can be a
+ * function of the current map, for a read-modify-write of one key inside the
+ * same serialized step (e.g. one entry of a JSON map).
  */
-export function mergePluginConfig(pluginId: string, patch: Readonly<Record<string, unknown>>, opts: PluginConfigOptions = {}): Promise<PluginConfig> {
+export function mergePluginConfig(
+  pluginId: string,
+  patch: Readonly<Record<string, unknown>> | ((current: Readonly<PluginConfig>) => Readonly<Record<string, unknown>>),
+  opts: PluginConfigOptions = {},
+): Promise<PluginConfig> {
   const prev = queues.get(pluginId) ?? Promise.resolve();
   const run = prev
     .catch(() => undefined)
     .then(async () => {
       const current = await readPluginConfig(pluginId, opts);
       const next: PluginConfig = { ...current };
-      for (const [k, v] of Object.entries(patch)) {
+      const changes = typeof patch === "function" ? patch(current) : patch;
+      for (const [k, v] of Object.entries(changes)) {
         if (v === undefined) delete next[k];
         else next[k] = v;
       }

@@ -15,6 +15,11 @@
 // - Only in secure contexts (https or http://localhost) and Chromium browsers.
 // - A toy connected to the Lovense Remote / Connect app stops advertising, so
 //   the browser can't see it until the app lets go.
+//
+// Several toys (one device per Toy Sync instance): each instance remembers
+// its own toy (storageKey) and claims the toy it picks (claims), so it never
+// takes, reuses or closes a toy another instance holds; a picked toy that is
+// already connected as another instance is refused with a message.
 import type { Bluetooth, BluetoothDevice, BluetoothRemoteGATTCharacteristic, BluetoothRemoteGATTService } from "./bluetooth.d.ts";
 import {
   BATTERY_COMMAND,
@@ -31,6 +36,7 @@ import {
 } from "./protocol.ts";
 import { createLevelSender, DEFAULT_MIN_INTERVAL_MS, type LevelSender } from "./sender.ts";
 import { createListeners, defaultNow, GLOBAL_TIMERS, type Timers } from "../util/timers.ts";
+import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
 
 export type Connection = "disconnected" | "connecting" | "connected" | "error";
 
@@ -60,6 +66,16 @@ export interface LovenseDeviceOptions {
   timers?: Timers;
   /** remembers the chosen device id; null = don't. Default localStorage */
   storage?: StorageLike | null;
+  /** where the chosen device id is remembered; default DEVICE_KEY (the first instance's key) */
+  storageKey?: string;
+  /** which toys other instances hold (default: none) */
+  claims?: InstanceClaims;
+  /**
+   * With nothing remembered, take an already-granted toy with a Lovense name
+   * without the picker (default true; only the first instance does, so an
+   * extra instance never grabs a toy meant for another one).
+   */
+  nameFallback?: boolean;
   /** reconnect delays in ms after the link drops; the last one repeats */
   reconnectDelaysMs?: number[];
   /** default window.isSecureContext */
@@ -89,6 +105,10 @@ export interface LovenseDevice {
   setNamePrefix(prefix: string | undefined): void;
   /** the Bluetooth id of the chosen toy (or the one remembered from an earlier visit) */
   deviceId(): string | undefined;
+  /** forgets the remembered toy (the instance was removed) */
+  forget(): void;
+  /** gives up this instance's claim on its toy (dispose) */
+  release(): void;
 }
 
 export const DEVICE_KEY = "lovense.device";
@@ -160,18 +180,18 @@ function defaultStorage(): StorageLike | undefined {
   }
 }
 
-function readStored(storage: StorageLike | undefined): string | undefined {
+function readStored(storage: StorageLike | undefined, key: string = DEVICE_KEY): string | undefined {
   try {
-    return storage?.getItem(DEVICE_KEY) || undefined;
+    return storage?.getItem(key) || undefined;
   } catch {
     return undefined;
   }
 }
 
-function writeStored(storage: StorageLike | undefined, id: string | undefined): void {
+function writeStored(storage: StorageLike | undefined, id: string | undefined, key: string = DEVICE_KEY): void {
   try {
-    if (id) storage?.setItem(DEVICE_KEY, id);
-    else storage?.removeItem(DEVICE_KEY);
+    if (id) storage?.setItem(key, id);
+    else storage?.removeItem(key);
   } catch {
     // not remembered: the next visit asks again
   }
@@ -184,18 +204,23 @@ export function bluetoothAvailable(bt: Bluetooth | undefined = navigatorBluetoot
 
 /**
  * Which already-granted device is the toy: the one remembered from the last
- * connect, else the first with a Lovense name (or the custom prefix).
+ * connect, else (byName, the default) the first with a Lovense name (or the
+ * custom prefix). Devices `free` says no to (held by another instance) are
+ * never taken.
  */
 export function pickKnownDevice<D extends { id: string; name?: string | null }>(
   devices: D[],
   rememberedId: string | undefined,
   namePrefix: string | undefined,
+  opts: { free?: (id: string) => boolean; byName?: boolean } = {},
 ): D | undefined {
+  const free = opts.free ?? (() => true);
   if (rememberedId) {
     const hit = devices.find((d) => d.id === rememberedId);
-    if (hit) return hit;
+    if (hit && free(hit.id)) return hit;
   }
-  return devices.find((d) => isLovenseName(d.name, namePrefix));
+  if (opts.byName === false) return undefined;
+  return devices.find((d) => free(d.id) && isLovenseName(d.name, namePrefix));
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, timers: Timers, what: string): Promise<T> {
@@ -250,6 +275,9 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
   const now = opts.now ?? defaultNow;
   const timers = opts.timers ?? GLOBAL_TIMERS;
   const storage = opts.storage === null ? undefined : (opts.storage ?? defaultStorage());
+  const storageKey = opts.storageKey ?? DEVICE_KEY;
+  const claims: InstanceClaims = opts.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+  const nameFallback = opts.nameFallback ?? true;
   const delays = opts.reconnectDelaysMs?.length ? opts.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
   const batteryPollMs = opts.batteryPollMs ?? DEFAULT_BATTERY_POLL_MS;
   const writeTimeoutMs = opts.writeTimeoutMs ?? WRITE_TIMEOUT_MS;
@@ -277,6 +305,15 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
   let everConnected = false;
   let writeFails = 0;
   let lastEmitted = "";
+  /** the toy this instance holds a claim on */
+  let claimed: string | undefined;
+
+  const free = (id: string) => claims.heldByOther(id) === undefined;
+
+  function releaseClaim(): void {
+    if (claimed !== undefined) claims.release(claimed);
+    claimed = undefined;
+  }
 
   // every write (levels, battery polls) goes through one chain: never overlapping
   let chain: Promise<void> = Promise.resolve();
@@ -387,6 +424,8 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
   }
 
   function closeGatt(d: BluetoothDevice | undefined): void {
+    // never close a link another instance holds (one GATT connection per toy in the page)
+    if (d && !free(d.id)) return;
     try {
       if (d?.gatt?.connected) d.gatt.disconnect();
     } catch {
@@ -442,10 +481,10 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
   }
 
   async function chooseDevice(bt: Bluetooth, mode: StartMode, gen: number): Promise<BluetoothDevice | undefined> {
-    if (device && !mustPick) return device;
+    if (device && !mustPick && free(device.id)) return device;
     if (!mustPick && typeof bt.getDevices === "function") {
       try {
-        const known = pickKnownDevice(await bt.getDevices(), readStored(storage), namePrefix);
+        const known = pickKnownDevice(await bt.getDevices(), readStored(storage, storageKey), namePrefix, { free, byName: nameFallback });
         if (known) return known;
       } catch {
         // fall through to the picker
@@ -453,13 +492,16 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
       if (gen !== generation) return undefined;
     }
     if (mode === "silent") return undefined;
+    let d: BluetoothDevice;
     try {
-      const d = await bt.requestDevice(requestOptions(namePrefix));
-      mustPick = false;
-      return d;
+      d = await bt.requestDevice(requestOptions(namePrefix));
     } catch (e) {
       throw new Failure(pickErrorMessage(e));
     }
+    mustPick = false;
+    const other = claims.heldByOther(d.id);
+    if (other !== undefined) throw new Failure(alreadyConnectedMessage(other));
+    return d;
   }
 
   /** first service with a writable characteristic */
@@ -496,7 +538,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
       const n = errName(e);
       if (n === "SecurityError") {
         mustPick = true;
-        writeStored(storage, undefined);
+        writeStored(storage, undefined, storageKey);
         throw new Failure(MSG_PICK_AGAIN);
       }
       if (n === "NotFoundError") throw new Failure(MSG_NO_SERVICE);
@@ -545,6 +587,13 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
         wanted = false;
         return;
       }
+      if (!claims.claim(dev.id)) {
+        // taken by another instance meanwhile
+        const other = claims.heldByOther(dev.id);
+        throw new Failure(alreadyConnectedMessage(other ?? "another device"));
+      }
+      if (claimed !== dev.id) releaseClaim();
+      claimed = dev.id;
       if (dev !== device) {
         device?.removeEventListener("gattserverdisconnected", onGattDisconnected);
         device = dev;
@@ -552,7 +601,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
         model = undefined;
         dev.addEventListener("gattserverdisconnected", onGattDisconnected);
       }
-      writeStored(storage, dev.id);
+      writeStored(storage, dev.id, storageKey);
       if (mode !== "reconnect") setStatus(named({ connection: "connecting", message: "Connecting to the toy…" }));
       const ok = await open(dev, gen);
       if (!ok || gen !== generation) return;
@@ -577,6 +626,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
       }
       wanted = false;
       closeGatt(device);
+      releaseClaim();
       if (mode === "silent") {
         // nobody clicked anything: no error, just a hint
         const message = failure.retry
@@ -638,6 +688,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
       d?.removeEventListener("gattserverdisconnected", onGattDisconnected);
       closeGatt(d);
       d?.addEventListener("gattserverdisconnected", onGattDisconnected);
+      releaseClaim();
     },
     setLevel: (level) => sender.set(level),
     idle: () => sender.idle(),
@@ -656,7 +707,11 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
     setNamePrefix(prefix) {
       namePrefix = prefix?.trim() || undefined;
     },
-    deviceId: () => device?.id ?? readStored(storage),
+    deviceId: () => device?.id ?? readStored(storage, storageKey),
+    forget() {
+      writeStored(storage, undefined, storageKey);
+    },
+    release: releaseClaim,
   };
 
   /** like detach() but keeps tx until the final 0 has been queued and written */

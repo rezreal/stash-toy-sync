@@ -12,6 +12,13 @@
 //   undo that by retrying.
 // - The settings panel and the 3D preview are React components handed in by
 //   register.ts, so this file stays free of React (and testable in node).
+// - One stroker per instance: the first instance keeps the old port key
+//   ("toysync.tcode.port", plus TCode Player's "tcp-port") and profile key
+//   (tcodeProfile); others remember "toysync.tcode.port.<instanceId>" and keep
+//   their profile in tcodeProfiles; ports other instances hold are never
+//   opened (ctx.claims).
+import { instanceClaims } from "../devices/claims.ts";
+import { instanceInfoOf, instanceStorageKey } from "../devices/instances.ts";
 import type { DriverContext } from "../devices/registry.ts";
 import type {
   ChannelMapping,
@@ -24,7 +31,7 @@ import type {
 } from "../devices/types.ts";
 import { tcodePlayerPresent } from "./coexist.ts";
 import { axisTargets, defaultChannelMapping, DEVICE_PRESETS, normalizeProfile, type Profile } from "./core.ts";
-import { MSG_INSECURE, MSG_UNSUPPORTED, TcodeEngine, type EngineEnv } from "./engine.ts";
+import { MSG_INSECURE, MSG_UNSUPPORTED, PORT_KEY, TcodeEngine, type EngineEnv } from "./engine.ts";
 import { createSharedProfileStore, type TcodeProfileStore } from "./profileStore.ts";
 
 export interface TcodeDevice extends SelfTimedDevice {
@@ -79,10 +86,19 @@ export function tcodeStatus(engine: TcodeEngine): DeviceStatus {
   return out;
 }
 
-export function createTcodeDevice(_ctx: DriverContext | undefined, opts: TcodeDeviceOptions = {}): TcodeDevice {
+export function createTcodeDevice(ctx: DriverContext | undefined, opts: TcodeDeviceOptions = {}): TcodeDevice {
   const log = opts.log ?? console;
-  const engine = new TcodeEngine({ oldPluginPresent: () => tcodePlayerPresent(), log, ...opts.engine });
-  const store = opts.store ?? createSharedProfileStore();
+  const inst = instanceInfoOf(ctx, "tcode");
+  const first = inst.ordinal <= 1;
+  const engine = new TcodeEngine({
+    oldPluginPresent: () => tcodePlayerPresent(),
+    log,
+    portKey: instanceStorageKey(PORT_KEY, inst),
+    legacyPortKey: first ? undefined : null,
+    claims: instanceClaims(ctx?.claims, inst.id),
+    ...opts.engine,
+  });
+  const store = opts.store ?? createSharedProfileStore(first ? undefined : inst.id);
 
   const ready = (async () => {
     let profile: Profile | undefined;
@@ -91,7 +107,7 @@ export function createTcodeDevice(_ctx: DriverContext | undefined, opts: TcodeDe
       if (stored !== undefined) {
         profile = normalizeProfile(stored);
       } else {
-        // first run: take over TCode Player's profile once
+        // first run: take over TCode Player's profile once (the first instance only: the store says none otherwise)
         const legacy = await store.loadLegacy();
         if (legacy !== undefined) {
           profile = normalizeProfile(legacy);
@@ -132,7 +148,7 @@ export function createTcodeDevice(_ctx: DriverContext | undefined, opts: TcodeDe
     engine,
     get id() {
       const port = engine.rememberedPort();
-      return port ? `tcode:${port}` : "tcode";
+      return port ? `tcode:${port}` : first ? "tcode" : inst.id;
     },
     ready: () => ready,
     profile: () => engine.state.profile,
@@ -183,6 +199,7 @@ export function createTcodeDevice(_ctx: DriverContext | undefined, opts: TcodeDe
     },
     settingsPanel: opts.settingsPanel,
     preview: opts.preview,
+    forget: () => engine.forgetPort(),
     dispose() {
       unsubscribe();
       listeners.clear();
