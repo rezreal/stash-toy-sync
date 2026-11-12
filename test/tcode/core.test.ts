@@ -55,3 +55,12 @@ test("scene cfg v2 and legacy v1", () => {
   assert.deepEqual(v1, { v: 2, offsetMs: 10, channels: { roll: { min: 5 } } });
   assert.deepEqual(Core.parseSceneCfg("not json"), { v: 2, offsetMs: 0, channels: {} });
 });
+
+test("channels from Toy Sync's script keep the main axis's inverted flag", () => {
+  const ch = Core.channelsFromScript([
+    { id: "stroke", actions: [{ at: 0, pos: 10 }], inverted: true },
+    { id: "r1", actions: [{ at: 0, pos: 40 }] },
+  ]);
+  assert.equal(ch.find((c) => c.name === "stroke")?.inverted, true);
+  assert.equal(ch.find((c) => c.id === "r1")?.inverted, false, "embedded axes come with it applied");
+});

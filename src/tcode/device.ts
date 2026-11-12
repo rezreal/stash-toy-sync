@@ -25,7 +25,7 @@ import type {
 import { tcodePlayerPresent } from "./coexist.ts";
 import { axisTargets, defaultChannelMapping, DEVICE_PRESETS, normalizeProfile, type Profile } from "./core.ts";
 import { MSG_INSECURE, MSG_UNSUPPORTED, TcodeEngine, type EngineEnv } from "./engine.ts";
-import { createGraphqlProfileStore, type TcodeProfileStore } from "./profileStore.ts";
+import { createSharedProfileStore, type TcodeProfileStore } from "./profileStore.ts";
 
 export interface TcodeDevice extends SelfTimedDevice {
   readonly kind: "tcode";
@@ -82,7 +82,7 @@ export function tcodeStatus(engine: TcodeEngine): DeviceStatus {
 export function createTcodeDevice(_ctx: DriverContext | undefined, opts: TcodeDeviceOptions = {}): TcodeDevice {
   const log = opts.log ?? console;
   const engine = new TcodeEngine({ oldPluginPresent: () => tcodePlayerPresent(), log, ...opts.engine });
-  const store = opts.store ?? createGraphqlProfileStore();
+  const store = opts.store ?? createSharedProfileStore();
 
   const ready = (async () => {
     let profile: Profile | undefined;

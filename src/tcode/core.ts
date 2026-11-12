@@ -294,7 +294,8 @@ export function parseFunscript(json: unknown, source = "embedded"): { version: s
 /** The program's channels as driver channels (names normalized, the program id kept for the mapping). */
 export function channelsFromScript(script: readonly ScriptChannel[]): Channel[] {
   const { channels, add } = channelList();
-  for (const c of script) add(c.id, c.actions, false, "script", c.id);
+  // the main axis carries the file's own `inverted` flag (embedded axes come with it applied)
+  for (const c of script) add(c.id, c.actions, c.inverted === true, "script", c.id);
   return channels;
 }
 

@@ -32,6 +32,10 @@ members = [
     (f"{ROOT}/plugin/{ID}.yml", f"{ID}.yml"),
     (f"{ROOT}/plugin/{ID}.js",  f"{ID}.js"),
     (f"{ROOT}/plugin/{ID}.css", f"{ID}.css"),
+    (f"{ROOT}/plugin/vendor/osr-emu.dist.min.js", "vendor/osr-emu.dist.min.js"),
+    (f"{ROOT}/plugin/vendor/osr-emu.LICENSE", "vendor/osr-emu.LICENSE"),
+    (f"{ROOT}/plugin/vendor/three.LICENSE", "vendor/three.LICENSE"),
+    (f"{ROOT}/plugin/vendor/THIRD_PARTY_NOTICES.md", "vendor/THIRD_PARTY_NOTICES.md"),
     (f"{ROOT}/README.md",       "README.md"),
 ]
 

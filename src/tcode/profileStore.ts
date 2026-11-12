@@ -7,6 +7,7 @@
 // changed (the other keys are the plugin settings from toysync.yml).
 // The configuration query is sent with plain fetch, not through stash's
 // Apollo client, so it can't clobber the app's cached configuration.
+import { mergePluginConfig, readOtherPluginConfig, readPluginConfig } from "../stash/pluginConfig.ts";
 import { stashUrl } from "../stash/url.ts";
 
 export interface TcodeProfileStore {
@@ -98,5 +99,25 @@ export function createMemoryProfileStore(initial?: { profile?: unknown; legacy?:
       saved.push(profile);
     },
     loadLegacy: async () => initial?.legacy,
+  };
+}
+
+/**
+ * The store the driver uses: the shared plugin-config helpers, which merge
+ * one write at a time and refresh stash's cached configuration afterwards,
+ * so saving the plugin's settings page later doesn't send back a stale map
+ * without tcodeProfile.
+ */
+export function createSharedProfileStore(): TcodeProfileStore {
+  return {
+    async load() {
+      return parseJson((await readPluginConfig(PLUGIN_ID))[PROFILE_KEY]);
+    },
+    async save(profile) {
+      await mergePluginConfig(PLUGIN_ID, { [PROFILE_KEY]: JSON.stringify(profile) });
+    },
+    async loadLegacy() {
+      return parseJson((await readOtherPluginConfig(LEGACY_PLUGIN_ID))[LEGACY_PROFILE_KEY]);
+    },
   };
 }
