@@ -19,6 +19,7 @@ const MEDIA_EVENTS = ["pause", "play", "playing", "ended", "seeking", "seeked", 
 
 export interface StashScene {
   id?: string;
+  title?: string;
   interactive?: boolean;
 }
 
@@ -101,6 +102,18 @@ export function LovenseSlot(props: { scene?: StashScene }) {
   React.useEffect(() => {
     rt.engine.setScript(load.state === "ready" ? load.script : undefined);
   }, [rt, load]);
+
+  // the open scene: nudges need one, the devices page shows its mapping
+  const title = props.scene?.title || undefined;
+  React.useEffect(() => {
+    if (!sceneId) {
+      rt.scene.set(undefined);
+      return;
+    }
+    const mapping = rt.engine.mapping();
+    rt.scene.set({ id: sceneId, interactive, scriptState: interactive ? load.state : "none", ...(title ? { title } : {}), ...(mapping ? { mapping } : {}) });
+  }, [rt, sceneId, title, interactive, load, settings]);
+  React.useEffect(() => () => rt.scene.set(undefined), [rt]);
 
   // a toy paired on an earlier visit reconnects without a click
   React.useEffect(() => {

@@ -1,10 +1,12 @@
 // Gain from other plugins: each source (e.g. "skilltree") sets a factor in
-// 0..1 with a "lovense:gain" event; the effective gain is the product of all
+// 0..1 with a "toysync:gain" event (or the legacy "lovense:gain"); the effective gain is the product of all
 // present factors (1 when there are none). A null gain removes the source.
 // See README.md, "Hook contract". DOM-free apart from the event shape.
 import { createListeners } from "../util/timers.ts";
 
-export const GAIN_EVENT = "lovense:gain";
+export const GAIN_EVENT = "toysync:gain";
+/** the Lovense Sync 0.1 name, still accepted */
+export const LEGACY_GAIN_EVENT = "lovense:gain";
 
 export interface GainDetail {
   source: string;
@@ -57,7 +59,7 @@ export interface EventTargetLike {
   removeEventListener(type: string, listener: (e: Event) => void): void;
 }
 
-/** applies every "lovense:gain" event on `target` to the combiner; returns an unsubscribe */
+/** applies every "toysync:gain" (and legacy "lovense:gain") event on `target` to the combiner; returns an unsubscribe */
 export function listenGainEvents(target: EventTargetLike, combiner: GainCombiner): () => void {
   const onGain = (e: Event) => {
     const detail = (e as CustomEvent<Partial<GainDetail> | undefined>).detail;
@@ -65,5 +67,9 @@ export function listenGainEvents(target: EventTargetLike, combiner: GainCombiner
     combiner.set(detail.source, detail.gain === undefined ? undefined : detail.gain);
   };
   target.addEventListener(GAIN_EVENT, onGain);
-  return () => target.removeEventListener(GAIN_EVENT, onGain);
+  target.addEventListener(LEGACY_GAIN_EVENT, onGain);
+  return () => {
+    target.removeEventListener(GAIN_EVENT, onGain);
+    target.removeEventListener(LEGACY_GAIN_EVENT, onGain);
+  };
 }
