@@ -513,3 +513,13 @@ describe("Coyote registration", () => {
     d.dispose?.();
   });
 });
+
+describe("Coyote mapping targets", () => {
+  it("offers the frame parts and defaults to the built-in mapping", () => {
+    const s = setup();
+    assert.deepEqual(s.d.mappingTargets!().map((t) => t.id), ["auto", "intensity", "a", "b", "balance", "speed"]);
+    const chans = [{ id: "stroke", actions: [{ at: 0, pos: 0 }] }, { id: "e2", actions: [{ at: 0, pos: 0 }] }];
+    assert.deepEqual(s.d.defaultMapping!(chans), { e2: { target: "b" }, stroke: { target: "auto" } });
+    s.d.dispose?.();
+  });
+});

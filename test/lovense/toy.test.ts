@@ -131,3 +131,14 @@ describe("Lovense ToyDevice", () => {
     assert.equal(lovenseLabel({}), "Lovense toy");
   });
 });
+
+describe("Lovense mapping targets", () => {
+  it("offers the vibration level; the default follows the axisMap setting", () => {
+    const s = setup({ axisMap: "roll=intensity" });
+    assert.deepEqual(s.t.mappingTargets!().map((x) => x.id), ["intensity"]);
+    const chans = [{ id: "stroke", actions: [{ at: 0, pos: 0 }] }, { id: "roll", actions: [{ at: 0, pos: 0 }] }];
+    assert.deepEqual(s.t.defaultMapping!(chans), { roll: { target: "intensity" } });
+    s.update({ axisMap: "" });
+    assert.deepEqual(s.t.defaultMapping!(chans), { stroke: { target: "intensity" } });
+  });
+});

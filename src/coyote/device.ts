@@ -37,6 +37,7 @@ import {
   type ProbeState,
 } from "./plan.ts";
 import { createTicker, type Ticker, type WorkerCtor } from "./ticker.ts";
+import { driveDefaultMapping, ESTIM_TARGETS } from "../mapping/targets.ts";
 
 export type CoyoteKind = "coyote-v2" | "coyote-v3";
 
@@ -365,6 +366,9 @@ export function createCoyoteDevice(ctx: DriverContext, transport: CoyoteTranspor
       ensureStreaming(false);
     },
     levelRange: () => ({ ...LEVEL_RANGE }),
+    // per-scene mapping (scene tab): the frame parts this driver reads
+    mappingTargets: () => ESTIM_TARGETS,
+    defaultMapping: (channels) => driveDefaultMapping(channels, ctx.settings().axisMap, ESTIM_TARGETS.map((t) => t.id)),
     lastPlan: () => plan,
     dispose() {
       if (disposed) return;

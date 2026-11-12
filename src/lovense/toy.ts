@@ -7,6 +7,7 @@
 // balance, speed and the direct channels; they have no nudge.
 import type { DriverContext } from "../devices/registry.ts";
 import type { DeviceStatus, DriveFrame, ToyDevice } from "../devices/types.ts";
+import { driveDefaultMapping, VIBRATOR_TARGETS } from "../mapping/targets.ts";
 import { createLovenseDevice, type LovenseDevice, type LovenseDeviceOptions, type LovenseStatus } from "./device.ts";
 import { MAX_LEVEL } from "./protocol.ts";
 
@@ -131,6 +132,9 @@ export function createLovenseToy(ctx: DriverContext, opts: LovenseToyOptions = {
       apply();
     },
     nudge: () => false,
+    // per-scene mapping: one target, the vibration level (frame.intensity)
+    mappingTargets: () => VIBRATOR_TARGETS,
+    defaultMapping: (channels) => driveDefaultMapping(channels, ctx.settings().axisMap, ["intensity"]),
     test() {
       cancelTest();
       testUntil = ctx.now() + TEST_MS;
