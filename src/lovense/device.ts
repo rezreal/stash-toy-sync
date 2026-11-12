@@ -36,7 +36,7 @@ import {
 } from "./protocol.ts";
 import { createLevelSender, DEFAULT_MIN_INTERVAL_MS, type LevelSender } from "./sender.ts";
 import { createListeners, defaultNow, GLOBAL_TIMERS, type Timers } from "../util/timers.ts";
-import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
+import { alreadyConnectedMessage, NO_CLAIMS, type InstanceClaims } from "../devices/claims.ts";
 
 export type Connection = "disconnected" | "connecting" | "connected" | "error";
 
@@ -276,7 +276,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
   const timers = opts.timers ?? GLOBAL_TIMERS;
   const storage = opts.storage === null ? undefined : (opts.storage ?? defaultStorage());
   const storageKey = opts.storageKey ?? DEVICE_KEY;
-  const claims: InstanceClaims = opts.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+  const claims: InstanceClaims = opts.claims ?? NO_CLAIMS;
   const nameFallback = opts.nameFallback ?? true;
   const delays = opts.reconnectDelaysMs?.length ? opts.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
   const batteryPollMs = opts.batteryPollMs ?? DEFAULT_BATTERY_POLL_MS;

@@ -27,7 +27,7 @@
 // same for two identical boards), so the claim key is per SerialPort object
 // in this page (portClaimKey); a remembered port matches by getInfo(), and
 // auto-connect takes the first matching port that isn't open or held.
-import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
+import { alreadyConnectedMessage, NO_CLAIMS, type InstanceClaims } from "../devices/claims.ts";
 import type { DeviceProgram, PlaybackEvent } from "../devices/types.ts";
 import {
   applyAxisCaps,
@@ -272,7 +272,7 @@ export class TcodeEngine {
     this.wallNow = env.wallNow ?? (() => Date.now());
     this.portKey = env.portKey ?? PORT_KEY;
     this.legacyPortKey = env.legacyPortKey === undefined ? LEGACY_PORT_KEY : env.legacyPortKey;
-    this.claims = env.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+    this.claims = env.claims ?? NO_CLAIMS;
     const secure = env.secure ?? !!(globalThis as { isSecureContext?: boolean }).isSecureContext;
     this.state = {
       supported: !!this.serial,

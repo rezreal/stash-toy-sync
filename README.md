@@ -246,10 +246,17 @@ kind (two Coyotes, two Lovense toys, two TCode strokers, …).
   (`lovense.device`, `toysync.coyote-v3.device`, `toysync.tcode.port`,
   `toysync.piupiu.device`), the others under `<that key>.<device id>`.
   Only the first falls back to a granted device found by its Bluetooth name
-  (or TCode Player's remembered port / launcher). Each device has its own
+  (or TCode Player's remembered port / launcher), and a Coyote only when that
+  name is unambiguous: with two granted Coyotes and nothing remembered, the
+  browser's picker lets you choose. Each device has its own
   per-scene mapping and, for TCode, its own profile (the first in the plugin
   setting `tcodeProfile`, further ones in `tcodeProfiles`, a JSON object by
   device id; a new one starts from the defaults).
+- **One at a time.** Devices set their Bluetooth links up one after another:
+  a second one waits ("Waiting for another device to finish connecting…"),
+  because two simultaneous connects make some Bluetooth stacks hang. A
+  Coyote that doesn't answer within 20 s is given up (and retried); clicking
+  Connect on a device stuck connecting starts over.
 - **Never twice.** A physical device is held by one Toy Sync device at a
   time: reconnecting skips devices another one holds, and picking one that
   is already connected elsewhere is refused (`Already connected as "…"`).

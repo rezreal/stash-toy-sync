@@ -27,11 +27,41 @@ export interface ClaimRegistry {
   holderName(key: string): string | undefined;
   /** releases every key an instance holds (the instance was removed) */
   releaseAll(instanceId: string): void;
+  /**
+   * Runs fn once no other exclusive() is running, in call order. Bluetooth
+   * stacks handle one GATT connect (and service discovery) at a time far
+   * better than several at once - a second one can hang or fail with "GATT
+   * operation already in progress" - so drivers open their links through
+   * this. fn must be time-limited (a hung one would hold everybody up);
+   * onWait is called right away when fn has to queue behind another.
+   */
+  exclusive<T>(fn: () => Promise<T>, onWait?: () => void): Promise<T>;
 }
 
 export function createClaimRegistry(nameOf: (instanceId: string) => string | undefined = () => undefined): ClaimRegistry {
   const held = new Map<string, string>();
+  let tail: Promise<unknown> = Promise.resolve();
+  let queued = 0;
+  let busy = false;
   return {
+    exclusive(fn, onWait) {
+      if (busy || queued > 0) onWait?.();
+      queued++;
+      const run = tail.then(async () => {
+        queued--;
+        busy = true;
+        try {
+          return await fn();
+        } finally {
+          busy = false;
+        }
+      });
+      tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    },
     isClaimed(key, byInstance) {
       const h = held.get(key);
       if (h === undefined) return false;
@@ -70,11 +100,21 @@ export interface InstanceClaims {
   /** false when another instance holds it */
   claim(key: string): boolean;
   release(key: string): void;
+  /** the registry's exclusive(); without a registry fn just runs */
+  exclusive<T>(fn: () => Promise<T>, onWait?: () => void): Promise<T>;
 }
+
+/** no registry (tests, old callers): every key is free and nothing queues */
+export const NO_CLAIMS: InstanceClaims = {
+  heldByOther: () => undefined,
+  claim: () => true,
+  release: () => undefined,
+  exclusive: (fn) => fn(),
+};
 
 /** binds the registry to one instance; without a registry (tests, old callers) every key is free */
 export function instanceClaims(registry: ClaimRegistry | undefined, instanceId: string): InstanceClaims {
-  if (!registry) return { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+  if (!registry) return NO_CLAIMS;
   return {
     heldByOther(key) {
       if (!key || !registry.isClaimed(key) || registry.isClaimed(key, instanceId)) return undefined;
@@ -82,5 +122,6 @@ export function instanceClaims(registry: ClaimRegistry | undefined, instanceId: 
     },
     claim: (key) => registry.claim(key, instanceId),
     release: (key) => registry.release(key, instanceId),
+    exclusive: (fn, onWait) => registry.exclusive(fn, onWait),
   };
 }

@@ -19,7 +19,7 @@ import type {
   RequestDeviceOptions,
 } from "../lovense/bluetooth.d.ts";
 import type { StorageLike } from "../devices/calibration.ts";
-import { alreadyConnectedMessage, type InstanceClaims } from "../devices/claims.ts";
+import { alreadyConnectedMessage, NO_CLAIMS, type InstanceClaims } from "../devices/claims.ts";
 import { createListeners, GLOBAL_TIMERS, type Timers } from "../util/timers.ts";
 
 export type Connection = "disconnected" | "connecting" | "connected" | "error";
@@ -87,6 +87,10 @@ export interface LinkOptions {
   secureContext?: boolean;
   batteryPollMs?: number;
   opTimeoutMs?: number;
+  /** how long gatt.connect() may take before the attempt is given up (default CONNECT_TIMEOUT_MS) */
+  connectTimeoutMs?: number;
+  /** how long the profile's service setup may take (default OPEN_TIMEOUT_MS) */
+  openTimeoutMs?: number;
   /** which devices other instances hold (default: none) */
   claims?: InstanceClaims;
   /**
@@ -128,6 +132,15 @@ export interface CoyoteLink {
 export const DEFAULT_RECONNECT_DELAYS_MS = [500, 1000, 2000, 3000, 5000];
 export const DEFAULT_BATTERY_POLL_MS = 60_000;
 export const OP_TIMEOUT_MS = 2000;
+/**
+ * A GATT connect to a device that is off, out of range or held by another
+ * app can sit for a very long time (or forever) in the browser. After this
+ * the attempt is dropped and retried, so the status never hangs on
+ * "connecting".
+ */
+export const CONNECT_TIMEOUT_MS = 20_000;
+/** the profile's service discovery and notification setup after the link is up */
+export const OPEN_TIMEOUT_MS = 15_000;
 export const STOP_TIMEOUT_MS = 500;
 /** consecutive failed writes before the link is dropped and reconnected */
 export const WRITE_FAILS_RELINK = 3;
@@ -145,6 +158,7 @@ export const MSG_PERMISSION_DENIED =
 export const MSG_POLICY =
   "Bluetooth is disallowed on this page by a permissions policy (e.g. stash runs inside a frame or behind a proxy " +
   "that sends Permissions-Policy: bluetooth=()).";
+export const MSG_WAITING_TURN = "Waiting for another device to finish connecting…";
 export const MSG_PICK_AGAIN = "The browser hasn't granted this Coyote's services to the site yet. Click Connect and pick it again.";
 
 export function errName(e: unknown): string {
@@ -244,7 +258,9 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   const delays = opts.reconnectDelaysMs?.length ? opts.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
   const batteryPollMs = opts.batteryPollMs ?? DEFAULT_BATTERY_POLL_MS;
   const opTimeoutMs = opts.opTimeoutMs ?? OP_TIMEOUT_MS;
-  const claims: InstanceClaims = opts.claims ?? { heldByOther: () => undefined, claim: () => true, release: () => undefined };
+  const claims: InstanceClaims = opts.claims ?? NO_CLAIMS;
+  const connectTimeoutMs = opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
+  const openTimeoutMs = opts.openTimeoutMs ?? OPEN_TIMEOUT_MS;
   const nameFallback = opts.nameFallback ?? true;
   const free = (id: string) => claims.heldByOther(id) === undefined;
   /** the device this instance holds a claim on */
@@ -269,6 +285,10 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   let isReady = false;
   let mustPick = false;
   let pending: Promise<void> | undefined;
+  /** gives up the attempt that is setting the link up right now (frees the connect lock); undefined when none is */
+  let cancelOpen: (() => void) | undefined;
+  /** where the pending attempt is: the picker may be open (choosing) or the link is being set up (opening) */
+  let phase: "choosing" | "opening" | undefined;
   let generation = 0;
   let retryTimer: unknown;
   let attempt = 0;
@@ -527,7 +547,12 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       if (hit && free(hit.id)) return hit;
     }
     if (!nameFallback) return undefined;
-    return devices.find((d) => free(d.id) && profile.isOwnName(d.name));
+    // With nothing remembered a granted device is taken by its name only when
+    // that is unambiguous. Two Coyotes are called the same: guessing would
+    // connect whichever comes first - perhaps the one that is off, or the one
+    // another instance remembers - so the picker decides.
+    const own = devices.filter((d) => free(d.id) && profile.isOwnName(d.name));
+    return own.length === 1 ? own[0] : undefined;
   }
 
   async function chooseDevice(bt: Bluetooth, mode: StartMode, gen: number): Promise<BluetoothDevice | undefined> {
@@ -554,19 +579,83 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
     return d;
   }
 
-  async function open(dev: BluetoothDevice, gen: number): Promise<boolean> {
-    const gatt = dev.gatt;
-    if (!gatt) throw new LinkFailure(`This Bluetooth device has no GATT server, so it can't be a ${profile.label}.`);
+  /**
+   * Stops a link that is still being set up: its attempt ends at once (so the
+   * page's connect lock is free for the next one) and the browser is told to
+   * abandon the pending GATT connect. A link that is up isn't touched.
+   */
+  function abortOpening(): void {
+    const cancel = cancelOpen;
+    if (!cancel) return;
+    cancelOpen = undefined;
+    cancel();
+    const d = device;
+    if (d && free(d.id)) {
+      try {
+        d.gatt?.disconnect();
+      } catch {
+        // nothing to abort
+      }
+    }
+  }
+
+  /** a promise's rejection for running out of time (withTimeout's) */
+  const isTimeout = (e: unknown) => /no answer within/.test(errMessage(e));
+  const seconds = (ms: number) => Math.max(1, Math.round(ms / 1000));
+
+  async function open(dev: BluetoothDevice, gen: number, mode: StartMode): Promise<boolean> {
+    if (!dev.gatt) throw new LinkFailure(`This Bluetooth device has no GATT server, so it can't be a ${profile.label}.`);
+    // one link is set up at a time across the page's instances (see
+    // ClaimRegistry.exclusive); a second one queues and says so
+    return claims.exclusive(
+      async () => {
+        if (gen !== generation) return false; // superseded while queued
+        if (mode !== "reconnect") setStatus({ connection: "connecting", message: `Connecting to the ${profile.label}…` });
+        // abortOpening() ends this attempt from outside, whatever the browser is doing
+        let wake: () => void = () => undefined;
+        const cancelled = new Promise<never>((_, reject) => {
+          wake = () => reject(new LinkFailure("cancelled"));
+        });
+        cancelled.catch(() => undefined);
+        cancelOpen = wake;
+        try {
+          return await setUp(dev, gen, cancelled);
+        } finally {
+          if (cancelOpen === wake) cancelOpen = undefined;
+        }
+      },
+      () => {
+        if (gen === generation) setStatus({ connection: "connecting", message: MSG_WAITING_TURN });
+      },
+    );
+  }
+
+  /** connect GATT and let the profile discover its services; `cancelled` rejects when the attempt is abandoned */
+  async function setUp(dev: BluetoothDevice, gen: number, cancelled: Promise<never>): Promise<boolean> {
+    const gatt = dev.gatt!;
     let server: BluetoothRemoteGATTServer;
     try {
-      server = await gatt.connect();
+      server = await Promise.race([withTimeout(gatt.connect(), connectTimeoutMs, timers, "Connecting"), cancelled]);
     } catch (e) {
+      if (e instanceof LinkFailure) throw e;
+      if (isTimeout(e)) {
+        // abandon the pending connect so the browser lets go of the device
+        try {
+          gatt.disconnect();
+        } catch {
+          // nothing to abort
+        }
+        throw new LinkFailure(
+          `The ${profile.label} didn't answer within ${seconds(connectTimeoutMs)} s. Is it on, in range and not connected to another app or page?`,
+          { retry: true },
+        );
+      }
       throw new LinkFailure(`Couldn't connect to the ${profile.label}: ${errMessage(e)}. Is it on and in range?`, { retry: true });
     }
     if (gen !== generation) return false;
     up = true;
     try {
-      await profile.open(server, dev, io);
+      await Promise.race([withTimeout(profile.open(server, dev, io), openTimeoutMs, timers, "Setting up"), cancelled]);
     } catch (e) {
       if (e instanceof LinkFailure) {
         if (e.repick) {
@@ -574,6 +663,9 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
           writeStored(undefined);
         }
         throw e;
+      }
+      if (isTimeout(e)) {
+        throw new LinkFailure(`The ${profile.label} connected but didn't finish setting up within ${seconds(openTimeoutMs)} s.`, { retry: true });
       }
       const n = errName(e);
       if (n === "SecurityError") {
@@ -603,6 +695,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         throw new LinkFailure(secure === false ? MSG_INSECURE : MSG_NO_BLUETOOTH);
       }
       if (mode === "pick") setStatus({ connection: "connecting", message: `Looking for the ${profile.label}…` });
+      if (gen === generation) phase = "choosing";
       const dev = await chooseDevice(bt, mode, gen);
       if (gen !== generation) return;
       if (!dev) {
@@ -622,8 +715,8 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         dev.addEventListener("gattserverdisconnected", onGattDisconnected);
       }
       writeStored(dev.id);
-      if (mode !== "reconnect") setStatus({ connection: "connecting", message: `Connecting to the ${profile.label}…` });
-      const ok = await open(dev, gen);
+      phase = "opening";
+      const ok = await open(dev, gen, mode);
       if (!ok || gen !== generation) return;
       attempt = 0;
       everConnected = true;
@@ -653,7 +746,18 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
 
   function begin(mode: "pick" | "silent"): Promise<void> {
     if (st.connection === "connected" && isReady) return Promise.resolve();
-    if (pending) return pending;
+    if (pending) {
+      // A Connect click while the link is being set up means "try again now":
+      // drop the stuck attempt (and abort its pending GATT connect) instead of
+      // handing back the same promise forever. While the picker is open it
+      // stays the same attempt.
+      if (mode !== "pick" || phase !== "opening") return pending;
+      generation++;
+      pending = undefined;
+      phase = undefined;
+      abortOpening();
+      detach();
+    }
     if (mode === "silent" && wanted) return Promise.resolve();
     wanted = true;
     everConnected = false;
@@ -667,7 +771,10 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         if (gen === generation) fail(`The ${profile.label} failed: ${errMessage(e)}`);
       })
       .finally(() => {
-        if (gen === generation) pending = undefined;
+        if (gen === generation) {
+          pending = undefined;
+          phase = undefined;
+        }
       });
     return pending;
   }
@@ -679,7 +786,9 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       wanted = false;
       const gen = ++generation;
       pending = undefined;
+      phase = undefined;
       attempt = 0;
+      abortOpening();
       if (retryTimer !== undefined) timers.clearTimeout(retryTimer);
       retryTimer = undefined;
       const d = device;
