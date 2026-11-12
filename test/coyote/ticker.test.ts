@@ -83,6 +83,23 @@ describe("worker ticker", () => {
     assert.deepEqual(revoked, ["blob:x"]);
   });
 
+  it("falls back to the timers when the worker stays silent after start (blocked without an error)", () => {
+    const clock = new FakeClock();
+    let n = 0;
+    const t = createTicker(() => n++, 100, { timers: clock, worker: FakeWorker, createObjectURL: () => "blob:y", revokeObjectURL: () => undefined });
+    const w = FakeWorker.last!;
+    t.start();
+    clock.advance(299);
+    assert.equal(n, 0);
+    clock.advance(1);
+    assert.equal(w.terminated, true, "the silent worker is dropped");
+    clock.advance(300);
+    assert.equal(n, 3, "the timers tick instead");
+    w.tick();
+    assert.equal(n, 3, "late worker messages are ignored");
+    t.dispose();
+  });
+
   it("falls back to the timers when the worker can't be created or errors", () => {
     const clock = new FakeClock();
     let n = 0;

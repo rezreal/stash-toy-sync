@@ -3,13 +3,11 @@
 // Drivers register themselves with the device registry on import
 // (registerDriver in src/devices/registry.ts), before the runtime is made.
 import "./lovense/register.ts";
-// DG-Lab Coyote e-stim drivers (branch "coyote"): uncomment once src/coyote/ exists.
-// import "./coyote/register.ts";
+import "./coyote/register.ts";
 import { installHook } from "./hook.ts";
 import { registerPages } from "./pages/register.tsx";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
 import { getRuntime } from "./runtime.ts";
-import "./coyote/register.ts";
 
 const rt = getRuntime();
 const lovense = rt.lovense();

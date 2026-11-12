@@ -65,6 +65,9 @@ export interface TickerOptions {
   revokeObjectURL?: (url: string) => void;
 }
 
+/** a worker that hasn't ticked this many intervals after start counts as blocked */
+export const WORKER_SILENT_INTERVALS = 3;
+
 /** ticks from a Blob worker when possible, else from the timers */
 export function createTicker(onTick: () => void, intervalMs: number, opts: TickerOptions): Ticker {
   const fallback = createTimerTicker(onTick, intervalMs, opts.timers);
@@ -84,12 +87,16 @@ export function createTicker(onTick: () => void, intervalMs: number, opts: Ticke
   }
   let on = false;
   let broken = false;
+  /** set while waiting for the first message after start: a silently blocked worker never sends one */
+  let guard: unknown;
   const w = worker;
-  w.onmessage = () => {
-    if (on && !broken) onTick();
+  const clearGuard = () => {
+    if (guard !== undefined) opts.timers.clearTimeout(guard);
+    guard = undefined;
   };
-  w.onerror = () => {
+  const giveUp = () => {
     // e.g. a CSP that forbids blob: workers: carry on with the timers
+    clearGuard();
     if (broken) return;
     broken = true;
     try {
@@ -99,20 +106,36 @@ export function createTicker(onTick: () => void, intervalMs: number, opts: Ticke
     }
     if (on) fallback.start();
   };
+  w.onmessage = () => {
+    clearGuard();
+    if (on && !broken) onTick();
+  };
+  w.onerror = giveUp;
   return {
     start() {
       on = true;
-      if (broken) fallback.start();
-      else w.postMessage(intervalMs);
+      if (broken) {
+        fallback.start();
+        return;
+      }
+      w.postMessage(intervalMs);
+      // a worker blocked without an error event would leave the device without packets
+      clearGuard();
+      guard = opts.timers.setTimeout(() => {
+        guard = undefined;
+        if (on) giveUp();
+      }, intervalMs * WORKER_SILENT_INTERVALS);
     },
     stop() {
       on = false;
+      clearGuard();
       fallback.stop();
       if (!broken) w.postMessage(0);
     },
     running: () => on,
     dispose() {
       on = false;
+      clearGuard();
       fallback.dispose();
       try {
         w.terminate();
