@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createDeviceManager } from "../../src/devices/manager.ts";
-import { createDriverRegistry, type DriverContext } from "../../src/devices/registry.ts";
+import { createDriverRegistry, type DriverBaseContext } from "../../src/devices/registry.ts";
 import type { PlaybackEvent } from "../../src/devices/types.ts";
 import { parseFunscript } from "../../src/funscript/parse.ts";
 import { createSceneBinder } from "../../src/mapping/binder.ts";
@@ -20,7 +20,7 @@ const flat = (pos: number) => ({ actions: [a(0, pos), a(60_000, pos)] });
 function setup() {
   const t = new FakeClock();
   const settings = createSettingsStore({ ...DEFAULT_SETTINGS, mode: "position" });
-  const context: DriverContext = { settings: () => settings.get(), onSettings: (cb) => settings.onChange(cb), timers: t, now: t.now };
+  const context: DriverBaseContext = { settings: () => settings.get(), onSettings: (cb) => settings.onChange(cb), timers: t, now: t.now };
   const registry = createDriverRegistry();
   registry.register("lovense", () => Object.assign(new FakeDevice("lovense"), { mappingTargets: () => VIBRATOR_TARGETS }));
   registry.register("coyote-v3", () => Object.assign(new FakeDevice("coyote-v3"), { mappingTargets: () => ESTIM_TARGETS }));

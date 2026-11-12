@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createDeviceManager } from "../../src/devices/manager.ts";
-import { createDriverRegistry, type DriverContext } from "../../src/devices/registry.ts";
+import { createDriverRegistry, type DriverBaseContext } from "../../src/devices/registry.ts";
 import type { DeviceKind, DriveFrame } from "../../src/devices/types.ts";
 import { DEFAULT_SETTINGS } from "../../src/sync/settings.ts";
 import { FakeClock, flush } from "../fakes/clock.ts";
@@ -11,7 +11,7 @@ function setup(kinds: DeviceKind[] = ["lovense", "coyote-v3"]) {
   const clock = new FakeClock();
   const registry = createDriverRegistry();
   const made: FakeDevice[] = [];
-  const context: DriverContext = { settings: () => DEFAULT_SETTINGS, onSettings: () => () => undefined, timers: clock, now: clock.now };
+  const context: DriverBaseContext = { settings: () => DEFAULT_SETTINGS, onSettings: () => () => undefined, timers: clock, now: clock.now };
   for (const k of kinds) {
     registry.register(k, () => {
       const d = new FakeDevice(k);

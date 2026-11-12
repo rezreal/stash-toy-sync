@@ -1,20 +1,39 @@
 // Driver registry: each device kind registers a factory once, at import
 // time. src/index.tsx imports the drivers' register modules
-// (src/lovense/register.ts, later src/coyote/register.ts), which call
-// registerDriver(kind, factory). The DeviceManager creates one device per
-// registered kind from it.
+// (src/lovense/register.ts, src/coyote/register.ts, …), which call
+// registerDriver(kind, factory). The DeviceManager calls the factory once
+// per device instance of that kind (src/devices/instances.ts).
 import type { Settings } from "../sync/settings.ts";
 import type { Timers } from "../util/timers.ts";
+import type { ClaimRegistry } from "./claims.ts";
+import type { InstanceInfo } from "./instances.ts";
 import type { DeviceKind, ToyDevice } from "./types.ts";
 
-/** What a driver gets from the plugin when it is created. */
-export interface DriverContext {
+/** What every driver instance shares: the plugin side of its context. */
+export interface DriverBaseContext {
   /** the current plugin settings (Settings › Plugins › Toy Sync), already parsed and clamped */
   settings(): Settings;
   /** called whenever the settings change; returns an unsubscribe */
   onSettings(cb: (s: Settings) => void): () => void;
   timers: Timers;
   now: () => number;
+}
+
+/** What a driver gets from the plugin when it is created: one per device instance. */
+export interface DriverContext extends DriverBaseContext {
+  /**
+   * The instance this device is: id ("coyote-v3", "coyote-v3:2"), live
+   * nickname and ordinal (1 = the first of its kind). Keep per-instance
+   * storage apart with instanceStorageKey() (the first instance keeps the
+   * old keys).
+   */
+  instance: InstanceInfo;
+  /**
+   * Which instance holds which physical device (page-wide). Claim the
+   * device's key when picking it, release it on disconnect and dispose;
+   * never take one another instance holds (src/devices/claims.ts).
+   */
+  claims: ClaimRegistry;
 }
 
 export type DriverFactory = (ctx: DriverContext) => ToyDevice;

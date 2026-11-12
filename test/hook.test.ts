@@ -144,6 +144,49 @@ describe("hook contract v2", () => {
     assert.equal(r.win.stashToySync, undefined);
   });
 
+  it("lists every instance with its id and name; connect() takes a kind or an instance id", async () => {
+    const clock = new FakeClock();
+    const registry = createDriverRegistry();
+    const made: FakeDevice[] = [];
+    registry.register("coyote-v3", (ctx) => {
+      const d = new FakeDevice("coyote-v3", `phys-${ctx.instance.id}`);
+      made.push(d);
+      return d;
+    }, { label: "Coyote" });
+    const manager = createDeviceManager({ context: fakeContext({}, clock).ctx, registry, timers: clock, storage: new MemStorage() });
+    manager.addInstance("coyote-v3", "Right");
+    const engine = createSyncEngine({ output: { drive: (f) => manager.driveAll(f) }, now: clock.now, timers: clock });
+    const win = new EventTarget() as HookWindow;
+    const statuses = captured<ToySyncStatus>(win, STATUS_EVENT);
+    const uninstall = installHook(win, {
+      manager,
+      engine,
+      gains: createGainCombiner(),
+      nudges: createNudgeLimiter(clock.now),
+      sceneOpen: () => true,
+      timers: clock,
+      now: clock.now,
+    });
+    const api = win.stashToySync!;
+    assert.deepEqual(
+      api.status().devices.map((d) => [d.instanceId, d.name, d.kind, d.id]),
+      [
+        ["coyote-v3", "Coyote", "coyote-v3", "phys-coyote-v3"],
+        ["coyote-v3:2", "Right", "coyote-v3", "phys-coyote-v3:2"],
+      ],
+    );
+    api.connect("coyote-v3:2");
+    await flush();
+    assert.deepEqual(made[1]!.calls, ["connect"]);
+    assert.deepEqual(made[0]!.calls, []);
+    api.connect("coyote-v3");
+    await flush();
+    assert.deepEqual(made[0]!.calls, ["connect"]);
+    manager.renameInstance("coyote-v3:2", "Left");
+    assert.equal(statuses.at(-1)!.devices[1]!.name, "Left", "a rename is a status change");
+    uninstall();
+  });
+
   it("takes gain from toysync:gain and the legacy lovense:gain, as a product of sources", () => {
     const r = hookRig();
     r.win.dispatchEvent(new CustomEvent(GAIN_EVENT, { detail: { source: "skilltree", gain: 0.5 } }));

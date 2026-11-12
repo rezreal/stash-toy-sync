@@ -97,7 +97,7 @@ describe("appendSlot", () => {
   });
 });
 
-const entry = (kind: DeviceEntry["kind"], status: DeviceStatus): DeviceEntry => ({ kind, id: `${kind}-1`, status });
+const entry = (kind: DeviceEntry["kind"], status: DeviceStatus): DeviceEntry => ({ instanceId: kind, name: kind, kind, id: `${kind}-1`, status });
 
 describe("bar view", () => {
   it("renders for interactive scenes, or while a device is connected", () => {

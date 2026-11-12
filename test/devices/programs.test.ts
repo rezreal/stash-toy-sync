@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createDeviceManager, type SceneProgramSource } from "../../src/devices/manager.ts";
-import { createDriverRegistry, type DriverContext } from "../../src/devices/registry.ts";
+import { createDriverRegistry, type DriverBaseContext } from "../../src/devices/registry.ts";
 import type { DriveFrame, PlaybackClock, ScriptChannel } from "../../src/devices/types.ts";
 import { DEFAULT_SETTINGS } from "../../src/sync/settings.ts";
 import { FakeClock } from "../fakes/clock.ts";
@@ -14,7 +14,7 @@ const channels: ScriptChannel[] = [{ id: "stroke", actions: [{ at: 0, pos: 0 }] 
 function setup() {
   const t = new FakeClock();
   const registry = createDriverRegistry();
-  const context: DriverContext = { settings: () => DEFAULT_SETTINGS, onSettings: () => () => undefined, timers: t, now: t.now };
+  const context: DriverBaseContext = { settings: () => DEFAULT_SETTINGS, onSettings: () => () => undefined, timers: t, now: t.now };
   registry.register("lovense", () => new FakeDevice("lovense"));
   registry.register("tcode", () => new FakeSelfTimedDevice("tcode"));
   const manager = createDeviceManager({ context, registry, timers: t });

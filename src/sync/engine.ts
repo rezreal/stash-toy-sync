@@ -1,7 +1,7 @@
 // Turns playback + funscript + settings + gain into DriveFrames every tick
 // (the player slot ticks every ~50 ms) and hands them to the output (the
 // DeviceManager): one default frame (the built-in mapping: what the hook
-// contract reports) plus one per device kind with a mapping
+// contract reports) plus one per device instance with a mapping
 // (setDeviceMappings, from the scene's mapping; src/mapping/frame.ts builds
 // them). Pure apart from injected time, timers and the output.
 //
@@ -25,7 +25,7 @@
 // Snap pulses lift intensity (and a / b when present) to full for 300 ms.
 // The hook gain multiplies intensity, a and b, never balance or speed.
 // Script time = video time + latency setting + the scene offset.
-import type { ChannelMapping, DeviceKind, DriveFrame, ScriptChannel } from "../devices/types.ts";
+import type { ChannelMapping, DriveFrame, ScriptChannel } from "../devices/types.ts";
 import type { Funscript } from "../funscript/parse.ts";
 import { findAxis } from "../funscript/parse.ts";
 import { scriptChannels } from "../mapping/channels.ts";
@@ -55,11 +55,12 @@ export interface PlaybackState {
 
 export interface FrameOutput {
   /**
-   * frame: the default frame (null = silence for every device); perKind: the
-   * frames of device kinds with their own mapping (absent while silent or
-   * during the test pulse: then `frame` is for everyone)
+   * frame: the default frame (null = silence for every device); perInstance:
+   * the frames of device instances with their own mapping, by instance id
+   * (absent while silent or during the test pulse: then `frame` is for
+   * everyone)
    */
-  drive(frame: DriveFrame | null, perKind?: ReadonlyMap<DeviceKind, DriveFrame>): void;
+  drive(frame: DriveFrame | null, perInstance?: ReadonlyMap<string, DriveFrame>): void;
 }
 
 export interface SyncEngineOptions {
@@ -86,8 +87,8 @@ export interface SyncEngine {
   setScript(f: Funscript | undefined): void;
   /** the script's channels (same array until the script changes) */
   channels(): readonly ScriptChannel[];
-  /** per device kind: its mapping for the scene (DriveFrame devices only); kinds left out get the default frame */
-  setDeviceMappings(m: ReadonlyMap<DeviceKind, Readonly<Record<string, ChannelMapping>>> | undefined): void;
+  /** per device instance id: its mapping for the scene (DriveFrame devices only); instances left out get the default frame */
+  setDeviceMappings(m: ReadonlyMap<string, Readonly<Record<string, ChannelMapping>>> | undefined): void;
   /** the scene's offset in ms (added to the video time, like the latency setting) */
   setOffsetMs(ms: number): void;
   hasScript(): boolean;
@@ -103,8 +104,8 @@ export interface SyncEngine {
   stop(): void;
   /** the default frame last sent */
   frame(): DriveFrame | null;
-  /** the frame last sent to a device kind (its own, else the default) */
-  frameFor(kind: DeviceKind): DriveFrame | null;
+  /** the frame last sent to a device instance (its own, else the default) */
+  frameFor(instanceId: string): DriveFrame | null;
   /** called after every frame sent (for meters and status events) */
   onFrame(cb: (frame: DriveFrame | null) => void): () => void;
   dispose(): void;
@@ -134,7 +135,7 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
   const channelById = new Map<string, ScriptChannel>();
   /** the built-in mapping (every DriveFrame target), without "off" entries */
   let defaultMapping: Record<string, ChannelMapping> = {};
-  let deviceMappings = new Map<DeviceKind, Record<string, ChannelMapping>>();
+  let deviceMappings = new Map<string, Record<string, ChannelMapping>>();
   let offsetMs = 0;
   let axisProblems: string[] = [];
   let pulser: SnapPulser | undefined;
@@ -151,7 +152,7 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
   let testUntil = -Infinity;
   let testTimer: unknown;
   let current: DriveFrame | null = null;
-  let currentPerKind: ReadonlyMap<DeviceKind, DriveFrame> | undefined;
+  let currentPerInstance: ReadonlyMap<string, DriveFrame> | undefined;
 
   function rebuildPulser(): void {
     pulser = settings.snapPulse && snapAxis && snapAxis.length > 0 ? createSnapPulser(snapAxis) : undefined;
@@ -178,14 +179,14 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
 
   interface Computed {
     frame: DriveFrame | null;
-    perKind?: Map<DeviceKind, DriveFrame>;
+    perInstance?: Map<string, DriveFrame>;
   }
 
   function output(c: Computed): DriveFrame | null {
     const frame = c.frame;
     current = frame;
-    currentPerKind = frame ? c.perKind : undefined;
-    opts.output.drive(frame, currentPerKind);
+    currentPerInstance = frame ? c.perInstance : undefined;
+    opts.output.drive(frame, currentPerInstance);
     for (const cb of [...frameListeners]) {
       try {
         cb(frame);
@@ -223,9 +224,9 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
     const g = gainOf();
     const frame = buildFrame(defaultMapping, sources, pulse, g);
     if (deviceMappings.size === 0) return { frame };
-    const perKind = new Map<DeviceKind, DriveFrame>();
-    for (const [kind, m] of deviceMappings) perKind.set(kind, buildFrame(m, sources, pulse, g));
-    return { frame, perKind };
+    const perInstance = new Map<string, DriveFrame>();
+    for (const [id, m] of deviceMappings) perInstance.set(id, buildFrame(m, sources, pulse, g));
+    return { frame, perInstance };
   }
 
   function compute(p: PlaybackState): Computed {
@@ -282,8 +283,8 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
     },
     channels: () => channels,
     setDeviceMappings(m) {
-      const next = new Map<DeviceKind, Record<string, ChannelMapping>>();
-      if (m) for (const [kind, mapping] of m) next.set(kind, activeMapping(mapping));
+      const next = new Map<string, Record<string, ChannelMapping>>();
+      if (m) for (const [id, mapping] of m) next.set(id, activeMapping(mapping));
       deviceMappings = next;
     },
     setOffsetMs(ms) {
@@ -334,7 +335,7 @@ export function createSyncEngine(opts: SyncEngineOptions): SyncEngine {
       output({ frame: null });
     },
     frame: () => current,
-    frameFor: (kind) => (current ? (currentPerKind?.get(kind) ?? current) : null),
+    frameFor: (id) => (current ? (currentPerInstance?.get(id) ?? current) : null),
     onFrame(cb) {
       frameListeners.add(cb);
       return () => frameListeners.delete(cb);

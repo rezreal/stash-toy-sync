@@ -1,10 +1,10 @@
-// The page-wide objects: the settings, the devices (one per registered
-// driver), one gain combiner, one sync engine, the playback clock, the open
+// The page-wide objects: the settings, the devices (one per device instance:
+// by default one per registered driver), one gain combiner, one sync engine, the playback clock, the open
 // scene's mapping and the binder that applies it. They outlive scene changes
 // (stash keeps the scene player mounted across scenes) and are shared with
 // the hook contract, the scene tab, the navbar menu and the pages.
 import { createDeviceManager, type DeviceManager } from "./devices/manager.ts";
-import type { DriverContext } from "./devices/registry.ts";
+import type { DriverBaseContext } from "./devices/registry.ts";
 import type { LovenseToy } from "./lovense/toy.ts";
 import { createSceneBinder, type SceneBinder } from "./mapping/binder.ts";
 import { SCENE_FIELD } from "./mapping/sceneMap.ts";
@@ -36,7 +36,7 @@ export interface Runtime {
   binder: SceneBinder;
   /** applies new settings everywhere (engine, drivers); a no-op when nothing changed */
   setSettings(s: Settings): void;
-  /** the Lovense driver, when registered (legacy status and the deprecated window.stashLovense) */
+  /** the first Lovense instance, when registered (legacy status and the deprecated window.stashLovense) */
   lovense(): LovenseToy | undefined;
 }
 
@@ -45,7 +45,7 @@ let runtime: Runtime | undefined;
 export function getRuntime(): Runtime {
   if (runtime) return runtime;
   const settings = createSettingsStore();
-  const context: DriverContext = {
+  const context: DriverBaseContext = {
     settings: () => settings.get(),
     onSettings: (cb) => settings.onChange(cb),
     timers: GLOBAL_TIMERS,

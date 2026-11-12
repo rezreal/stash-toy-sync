@@ -1,6 +1,6 @@
 // A device's effective mapping for a scene. Pure.
 //
-// Per script channel: the scene's saved entry for the device kind (merged over
+// Per script channel: the scene's saved entry for the device instance (merged over
 // the default entry, so a saved { invert: true } keeps the default target),
 // else the default entry. The default is the device's own defaultMapping(),
 // else, for DriveFrame devices, the built-in one from the axisMap setting
@@ -25,7 +25,7 @@ export function isSelfTimed(d: ToyDevice | undefined): boolean {
 
 export interface EffectiveInput {
   channels: readonly ScriptChannel[];
-  /** the scene's saved / edited entries for this device kind */
+  /** the scene's saved / edited entries for this device instance */
   saved?: Readonly<Record<string, ChannelOverride>>;
   /** the default when nothing is saved for a channel */
   defaults: Readonly<Record<string, ChannelMapping>>;
@@ -61,9 +61,20 @@ export function deviceDefaults(device: ToyDevice, channels: readonly ScriptChann
   return driveDefaultMapping(channels, axisMap, targets);
 }
 
-/** the effective mapping of a device for a scene map (every channel, "off" included) */
-export function deviceMapping(device: ToyDevice, channels: readonly ScriptChannel[], map: SceneMap | undefined, axisMap: string): Record<string, ChannelMapping> {
-  return effectiveMapping({ channels, saved: map?.devices[device.kind]?.mapping, defaults: deviceDefaults(device, channels, axisMap) });
+/**
+ * The effective mapping of a device for a scene map (every channel, "off"
+ * included). `instanceId` is the key of its entry in the map (default: the
+ * kind, i.e. the first instance); instances never share or fall back to
+ * another instance's entry.
+ */
+export function deviceMapping(
+  device: ToyDevice,
+  channels: readonly ScriptChannel[],
+  map: SceneMap | undefined,
+  axisMap: string,
+  instanceId: string = device.kind,
+): Record<string, ChannelMapping> {
+  return effectiveMapping({ channels, saved: map?.devices[instanceId]?.mapping, defaults: deviceDefaults(device, channels, axisMap) });
 }
 
 /** whether a channel's entry differs from the default (for "custom" badges) */

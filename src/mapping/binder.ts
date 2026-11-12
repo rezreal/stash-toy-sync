@@ -1,15 +1,18 @@
 // Ties the open scene to the devices: its script goes to the engine, its
 // mapping (the store's working copy, so edits apply live) becomes each
-// device's effective mapping, which goes to the engine (DriveFrame devices:
-// their own frames) and to the manager (self-timed devices: setProgram).
-// Its offset goes to the engine and the clock.
+// device instance's effective mapping (from the map's entry under the
+// instance id: every instance has its own, nothing is shared between two
+// instances of a kind), which goes to the engine (DriveFrame devices: their
+// own frames) and to the manager (self-timed devices: setProgram). Its
+// offset goes to the engine and the clock.
 //
 // Recomputes when the scene or its script changes, the working copy changes,
 // the settings change (axisMap feeds the built-in default) and when the
-// manager reports a change (a device was created, or a driver's own default
-// may have changed); the manager doesn't resend unchanged programs.
+// manager reports a change (a device was created, added or removed, or a
+// driver's own default may have changed); the manager doesn't resend
+// unchanged programs.
 import type { DeviceManager } from "../devices/manager.ts";
-import type { ChannelMapping, DeviceKind, ScriptChannel, ToyDevice } from "../devices/types.ts";
+import type { ChannelMapping, ScriptChannel, ToyDevice } from "../devices/types.ts";
 import type { Funscript } from "../funscript/parse.ts";
 import type { VideoClock } from "../player/clock.ts";
 import type { SyncEngine } from "../sync/engine.ts";
@@ -40,7 +43,7 @@ export interface SceneBinder {
 }
 
 export interface SceneBinderDeps {
-  manager: Pick<DeviceManager, "devices" | "setScene" | "onChange">;
+  manager: Pick<DeviceManager, "instances" | "device" | "instanceOf" | "setScene" | "onChange">;
   engine: Pick<SyncEngine, "setScript" | "channels" | "setDeviceMappings" | "setOffsetMs">;
   store: Pick<SceneMapStore, "state" | "onChange">;
   settings: { get(): Settings; onChange(cb: (s: Settings) => void): () => void };
@@ -54,6 +57,9 @@ export function createSceneBinder(deps: SceneBinderDeps): SceneBinder {
   let mappings = new Map<ToyDevice, Record<string, ChannelMapping>>();
   let key = "";
   const listeners = new Set<() => void>();
+
+  /** a device's instance id (its key in the scene map) */
+  const idOf = (d: ToyDevice) => deps.manager.instanceOf(d)?.instanceId ?? d.kind;
 
   function sceneMap(): SceneMap | undefined {
     const st = deps.store.state();
@@ -74,32 +80,36 @@ export function createSceneBinder(deps: SceneBinderDeps): SceneBinder {
     }
     const axisMap = deps.settings.get().axisMap;
     const next = new Map<ToyDevice, Record<string, ChannelMapping>>();
-    const perKind = new Map<DeviceKind, Record<string, ChannelMapping>>();
-    for (const d of deps.manager.devices()) {
+    const perInstance = new Map<string, Record<string, ChannelMapping>>();
+    const keyed: [string, Record<string, ChannelMapping>][] = [];
+    for (const inst of deps.manager.instances()) {
+      const d = deps.manager.device(inst.instanceId);
+      if (!d) continue;
       let m: Record<string, ChannelMapping> = {};
       try {
-        m = deviceMapping(d, channels, map, axisMap);
+        m = deviceMapping(d, channels, map, axisMap, inst.instanceId);
       } catch (err) {
-        console.error(`[toysync] mapping for ${d.kind} failed`, err);
+        console.error(`[toysync] mapping for ${inst.instanceId} failed`, err);
       }
       next.set(d, m);
-      if (!isSelfTimed(d)) perKind.set(d.kind, activeMapping(m));
+      keyed.push([inst.instanceId, m]);
+      if (!isSelfTimed(d)) perInstance.set(inst.instanceId, activeMapping(m));
     }
     mappings = next;
-    deps.engine.setDeviceMappings(perKind);
+    deps.engine.setDeviceMappings(perInstance);
     deps.manager.setScene(
       sceneId && channels.length > 0
         ? {
             sceneId,
             clock: deps.clock,
             channels,
-            mapping: (d) => mappings.get(d) ?? deviceMapping(d, channels, map, axisMap),
-            options: (kind) => map?.devices[kind]?.options,
+            mapping: (d) => mappings.get(d) ?? deviceMapping(d, channels, map, axisMap, idOf(d)),
+            options: (instanceId) => map?.devices[instanceId]?.options,
             gain: deps.gain,
           }
         : null,
     );
-    const k = JSON.stringify([sceneId ?? null, channels.length, offset, [...next].map(([d, m]) => [d.kind, m])]);
+    const k = JSON.stringify([sceneId ?? null, channels.length, offset, keyed]);
     if (k === key) return;
     key = k;
     for (const cb of [...listeners]) {
@@ -125,7 +135,7 @@ export function createSceneBinder(deps: SceneBinderDeps): SceneBinder {
     sceneId: () => scene?.sceneId,
     channels: () => deps.engine.channels(),
     mappingFor(device) {
-      return mappings.get(device) ?? deviceMapping(device, deps.engine.channels(), sceneMap(), deps.settings.get().axisMap);
+      return mappings.get(device) ?? deviceMapping(device, deps.engine.channels(), sceneMap(), deps.settings.get().axisMap, idOf(device));
     },
     refresh: recompute,
     onChange(cb) {

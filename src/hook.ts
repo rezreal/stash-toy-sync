@@ -9,10 +9,12 @@
 //   device's status changes; changes of the output alone (frame, meters) at
 //   most every 200 ms (5/s), the latest always delivered
 // - legacy "lovense:status" { ...Lovense status } for one more version
-// - window.stashToySync = { version: 2, status(), connect(kind) }
+//   (device entries carry instanceId and name: several devices of one kind
+//   are possible)
+// - window.stashToySync = { version: 2, status(), connect(kindOrInstanceId) }
 // - window.stashLovense = { version: 1, status(), connect() }, deprecated
 import type { DeviceEntry } from "./devices/manager.ts";
-import type { DeviceKind, DriveFrame } from "./devices/types.ts";
+import type { DriveFrame } from "./devices/types.ts";
 import type { LovenseStatus } from "./lovense/device.ts";
 import { listenGainEvents, type EventTargetLike, type GainCombiner } from "./sync/gain.ts";
 import type { NudgeDrop, NudgeLimiter } from "./sync/nudge.ts";
@@ -36,8 +38,12 @@ export interface ToySyncStatus {
 export interface StashToySyncApi {
   version: 2;
   status(): ToySyncStatus;
-  /** must be called from a user gesture (a click) the first time: it may open the Bluetooth picker. Default "lovense". */
-  connect(kind?: DeviceKind): void;
+  /**
+   * Must be called from a user gesture (a click) the first time: it may open
+   * the Bluetooth picker. Takes a device kind (its first instance) or an
+   * instance id ("coyote-v3:2"). Default "lovense".
+   */
+  connect(kindOrInstanceId?: string): void;
 }
 
 /** the Lovense Sync 0.1 API, kept as window.stashLovense for one version */
@@ -135,7 +141,7 @@ export function stableToySyncKey(s: ToySyncStatus): string {
   return JSON.stringify({
     devices: s.devices.map((d) => {
       const { output: _output, ...rest } = d.status;
-      return { kind: d.kind, id: d.id, status: rest };
+      return { instanceId: d.instanceId, name: d.name, kind: d.kind, id: d.id, status: rest };
     }),
     gain: s.gain,
     silent: s.frame === null,
@@ -152,7 +158,8 @@ export interface HookDeps {
   manager: {
     statuses(): DeviceEntry[];
     onChange(cb: (entries: DeviceEntry[]) => void): () => void;
-    connect(kind: DeviceKind): Promise<void>;
+    /** a kind names its first instance */
+    connect(instanceId: string): Promise<void>;
     nudgeAll(): number;
   };
   engine: {
@@ -233,8 +240,9 @@ export function installHook(win: HookWindow, deps: HookDeps): () => void {
   const api: StashToySyncApi = {
     version: 2,
     status,
-    connect: (kind = "lovense") => {
-      void deps.manager.connect(kind);
+    connect: (kindOrInstanceId = "lovense") => {
+      // the first instance of a kind has the kind as its id
+      void deps.manager.connect(String(kindOrInstanceId));
     },
   };
   win.stashToySync = api;

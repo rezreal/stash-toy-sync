@@ -1,6 +1,7 @@
 // The device contract every driver implements (Lovense in src/lovense/toy.ts,
-// DG-Lab Coyote in src/coyote/). The sync engine produces one DriveFrame per
-// tick; the DeviceManager (manager.ts) fans it out to every device. Drivers
+// DG-Lab Coyote in src/coyote/). The sync engine produces DriveFrames per
+// tick; the DeviceManager (manager.ts) fans them out to every device
+// instance (one ToyDevice per instance, several per kind possible). Drivers
 // own everything device specific: their own level scale, rate limits,
 // packet cadence and safety caps. Pure types, no runtime code.
 
@@ -41,7 +42,8 @@ export interface ToyDevice {
   /**
    * Stable per physical device (e.g. the Bluetooth id). May be a getter: before
    * the first connect there is no physical device yet, and the value is then
-   * the kind (or a remembered id from an earlier visit).
+   * the instance id (the kind for the first instance) or a remembered id from
+   * an earlier visit.
    */
   readonly id: string;            // stable per physical device (e.g. Bluetooth id)
   connect(): Promise<void>;       // never rejects; call from a user gesture the first time
@@ -68,8 +70,14 @@ export interface ToyDevice {
    * Lovense driver does). Otherwise the manager retries with resume().
    */
   readonly selfReconnects?: boolean;
-  /** Optional: release timers and listeners (the manager calls it on dispose). */
+  /** Optional: release timers and listeners (the manager calls it on dispose and when the instance is removed). */
   dispose?(): void;
+  /**
+   * Optional: forget the physical device remembered for this instance (its
+   * stored id), so nothing reconnects it any more. The manager calls it after
+   * disconnect() when the user removes the instance. Calibrations stay.
+   */
+  forget?(): void;
   /**
    * Optional: what a script channel can be mapped to on this device, for the
    * scene tab (TCode: the preset's active axes L0, R0…; Coyote: a, b, balance,
