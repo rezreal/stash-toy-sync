@@ -13,8 +13,24 @@ Devices:
   in through the driver registry (see *For driver authors*). Until they are
   part of the build, only Lovense is listed.
 
-Several devices can be connected at once; all of them follow the same script.
-It never touches stash's Handy/interactive client; both can run side by side.
+- **TCode strokers** (OSR2 / SR6 / SSR1 over Web Serial) and the **Hismith
+  PiuPiu** lube launcher: the drivers from the former *TCode Player* plugin
+  plug in through the same registry as self-timed devices (see *For driver
+  authors*).
+
+Several devices can be connected at once and all follow the scene's script;
+each scene can say per device which script channel drives what (the scene
+page's **Interactive** tab). It never touches stash's Handy/interactive
+client; both can run side by side.
+
+## Coming from TCode Player
+
+Toy Sync takes over what the *TCode Player* plugin did: the Interactive tab,
+the navbar menu and the per-scene mapping. Scene mappings saved by TCode
+Player (`tcode_map`) are read and converted automatically (see *Per-scene
+mapping*); `tcode_map` itself is never changed or removed. While TCode Player
+is still installed, the devices page and the Interactive tab show a notice:
+uninstall it under Settings › Plugins, or the stroker is driven twice.
 
 ## Upgrading from Lovense Sync 0.1
 
@@ -50,13 +66,54 @@ reconnect until you press **Stop** or **Disconnect**.
 
 ## Pages
 
-There is no menu entry; the bar under the player links to the pages. Each
-page keeps its state in the URL, so the browser's back and forward buttons
-and reloading work.
+The navbar menu and the bar under the player link to the pages. Each page
+keeps its state in the URL, so the browser's back and forward buttons and
+reloading work.
+
+### The navbar menu
+
+An icon in stash's navbar (next to the other utility icons) with a status
+dot: grey = nothing connected, green = connected, glowing = a device is
+outputting. It opens a panel with:
+
+- every registered device: name, state, **Connect / Disconnect**, and the
+  driver's own actions (TCode: Home, Motion on/off);
+- **Stop all**: outputs 0 on every device and disconnects them (like Stop
+  under the player);
+- links to the devices page and the calibration page.
+
+Escape or a click outside closes it; keyboard focus moves into the panel when
+it opens and back to the icon when it closes.
+
+### The scene page's Interactive tab
+
+A tab next to stash's own scene tabs. For the open scene:
+
+- **Script channels**: every channel of the funscript (`stroke` is the main
+  axis, embedded axes by their id) with a preview line; an orange marker
+  follows the video.
+- **Scene offset (ms)**: shifts the script against the video for this scene
+  (positive = devices run earlier; adds to *Latency compensation*).
+- Per registered device (connected or not), its state, live output meters,
+  Connect / Disconnect, its preview (TCode: the 3D view) and one row per
+  channel:
+  - **Target**: what the channel drives on this device (the device's own
+    targets, grouped; or Off). Lovense: Vibration. Coyote: Auto, Intensity,
+    Channel A, Channel B, Balance A↔B, Pulse frequency. TCode: its axes.
+  - **Invert** and **Min / Max** (0–100): the channel's full range is lerped
+    into this window, so the motion keeps its shape (Min above Max flips it).
+  - **Test**: sweeps the channel's target where the driver supports it
+    (TCode), otherwise the device's short test pulse.
+  - **Default**: back to the device's default for that channel.
+- **Save to scene** stores the mapping in the scene; **Revert** goes back to
+  what is stored; **Use defaults** (then Save) removes the scene's mapping.
+
+Changes apply live while the scene plays, before saving.
 
 ### The bar under the player
 
-Shown for interactive scenes, and on any scene while a device is connected:
+Shown for interactive scenes, and on any scene while a device is connected
+(it also binds the scene: script, saved mapping and clock):
 
 - **Toy Sync**: link to the devices page.
 - Each connected device: name, battery %, and a live output meter (one, or
@@ -74,9 +131,10 @@ Shown for interactive scenes, and on any scene while a device is connected:
 - Every supported device kind with **Connect / Disconnect / Test / Stop**,
   status, battery, live meters per channel, the stored calibration and a
   **Calibrate** link for e-stim devices (highlighted when calibration is
-  needed).
-- How scripts drive the devices, and the effective mapping of the open or
-  last scene (which axis feeds intensity, balance, speed, channel A and B).
+  needed), the driver's own actions and settings panel (TCode: preset and
+  axis limits), and for self-timed devices which scene they are playing.
+- How scripts drive the devices, and the default mapping of the open or last
+  scene (which axis feeds intensity, balance, speed, channel A and B).
 - A summary of the current settings (they live in Settings › Plugins ›
   Toy Sync).
 
@@ -109,12 +167,56 @@ calibrations live in the browser's localStorage under
 calibrated first; channel B is saved next to it. If no e-stim device is
 connected, the page says so and links to `/toysync`.
 
+## Per-scene mapping
+
+Without a saved mapping every device uses its default (for Lovense and Coyote
+exactly the behaviour described under *How the script becomes output*; TCode
+maps channel names to axes from its device profile). A scene's own mapping is
+stored in the scene custom field **`toysync_map`**, a JSON string you can also
+edit by hand:
+
+```json
+{ "v": 1, "offsetMs": 40,
+  "devices": {
+    "coyote-v3": { "mapping": { "stroke": { "target": "auto" }, "e1": { "target": "a", "max": 80 } } },
+    "lovense":   { "mapping": { "stroke": { "target": "intensity", "min": 10, "max": 70 } } },
+    "tcode":     { "mapping": { "pitch": { "target": "R2", "invert": true, "min": 20, "max": 80 },
+                                "surge": { "target": "off" } },
+                   "options": { "generate": "gentle" } } } }
+```
+
+- `devices` is keyed by device kind (`lovense`, `coyote-v2`, `coyote-v3`,
+  `tcode`, `piupiu`); `mapping` by script channel id (lowercase; `stroke` =
+  the main axis).
+- An entry is `{ target, invert?, min?, max? }` (min/max 0–100, default 0 and
+  100). Fields left out come from the device's default for that channel, so
+  `{ "invert": true }` inverts the default target; `"target": "off"` switches
+  the channel off for that device. Channels not listed keep the default.
+- `options` holds per-scene options of a device kind (TCode: `generate`, the
+  per-scene *Fill in missing axes* level). The tab shows them read-only.
+- `offsetMs` is the scene offset.
+
+**Migration from TCode Player.** When a scene has no `toysync_map` but a
+`tcode_map`, it is converted when read (in memory): its per-channel
+`{ axis, invert, min, max }` become `devices.tcode.mapping` entries
+(`axis` → `target`; TCode names like `R1` become channel `r1`; entries without
+`axis` keep the default axis), its `offsetMs` the scene offset and its
+`generate` `devices.tcode.options.generate`. TCode Player's older per-file
+form (`{ "files": { "<oshash>": … } }`) uses the entry of the scene's first
+file (by oshash, then md5), else the first one. Save writes `toysync_map`;
+`tcode_map` is never written or removed. Use defaults + Save removes
+`toysync_map`, except while the scene still has a `tcode_map`: then an empty
+`toysync_map` is written, so the old mapping doesn't come back on the next
+read.
+
 ## How the script becomes output
 
 The funscript is fetched from stash (`/scene/{id}/funscript`, relative to
-stash's base URL) for scenes marked interactive. Every ~50 ms the plugin turns
-it into one **frame** for this instant, which every device reads in its own
-way:
+stash's base URL) for scenes marked interactive. Self-timed devices (TCode,
+PiuPiu) read the script and the video's position themselves. For the others,
+every ~50 ms the plugin turns the script into a **frame** for this instant,
+one per device kind from that device's mapping (the default mapping gives
+every device the same frame), which each device reads in its own way:
 
 | Part | Range | From the main stroke | Used by |
 | --- | --- | --- | --- |
@@ -156,6 +258,13 @@ channel; anything not mapped follows the stroke. A script with mapped axes but
 no stroke works too (intensity is then the stronger of `a` / `b`). A mapped
 `a` / `b` axis outside its actions is 0 on that channel.
 
+With the per-scene mapping, a target is fed by the channel mapped to it (after
+its invert and min/max window): the main stroke gives its mode-dependent
+intensity for intensity / a / b, its depth for balance and its speed for
+speed; any other channel gives its position / 100. The **Auto** target (the
+default for the stroke on e-stim devices) feeds intensity, balance and speed
+from the stroke as above, each only while no other channel is mapped to it.
+
 **Gain** from other plugins multiplies intensity, `a` and `b`, never balance
 or speed.
 
@@ -163,8 +272,9 @@ or speed.
 intensity (and `a` / `b`) to full for 300 ms (× gain), at most 3 pulses per
 second.
 
-**Latency:** the script is read *Latency compensation* ms ahead of the video
-(positive values make the devices run earlier, to make up for Bluetooth lag).
+**Latency:** the script is read *Latency compensation* ms plus the scene
+offset ahead of the video (positive values make the devices run earlier, to
+make up for Bluetooth lag).
 
 **Lovense:** level = round(20 × intensity × Strength), clamped to 0–20. With a
 *Minimum level*, any intensity above 0 gives at least that level (never above
@@ -290,6 +400,9 @@ is still dispatched, and `window.stashLovense` (`version: 1`,
   buffering) with a script. Every stop sends an explicit 0, and 0 is held a
   little longer than the rate limits so a quick resume can't swallow it.
   Closing the tab sends a best-effort 0.
+- **Self-timed devices** (TCode, PiuPiu) follow the same rules from their
+  own clock: they get no program while no scene with a script is open, and
+  Stop, Stop all, leaving the scene and closing the tab stop them too.
 - **Nudges never escalate.** A nudge is one burst at the calibrated level;
   requests are rate-limited, dropped rather than queued, and never sent
   without an open scene.
@@ -324,6 +437,43 @@ retries a dropped link with `resume()` unless the driver sets
 `channelLevels`, `estimFrequencyHz`) and `src/devices/calibration.ts`
 (`levelFor`, `validateCalibration`, `loadCalibration` / `saveCalibration`)
 hold the shared e-stim maths and storage.
+
+**Optional members** (all in `src/devices/types.ts`):
+
+| Member | Used by |
+| --- | --- |
+| `mappingTargets()` → `{ id, label, group? }[]` | the Interactive tab's target picker (grouped by `group`) |
+| `defaultMapping(channels)` → `{ [channelId]: { target, invert?, min?, max? } }` | the mapping of channels a scene doesn't override; without it DriveFrame devices get the built-in one from *Axis mapping*, self-timed devices start with everything off |
+| `actions()` → `{ id, label, run() }[]` | buttons in the navbar menu and on the device's card (TCode: Home, Motion on/off) |
+| `settingsPanel` (React component, props `{ device }`) | rendered in the device's card on `/toysync` |
+| `preview` (React component, props `{ device, program }`) | rendered in the device's section of the Interactive tab (`program` is the device's `DeviceProgram` or null) |
+| `testChannel(channelId)` | the Interactive tab's per-channel Test button; without it the button calls `test()` |
+
+**Self-timed devices** (`selfTimed: true`, `SelfTimedDevice`) time their own
+output (TCode sends every 10–20 ms) and never get frames. Instead the manager
+calls `setProgram(program)` when a scene with a script opens, whenever the
+program changes (a live edit in the Interactive tab, a different script, the
+device's options), and `setProgram(null)` when the scene closes or has no
+script; an unchanged program isn't sent again. A `DeviceProgram` is
+`{ sceneId, clock, channels, mapping, options?, gain() }`: `channels` are
+every `ScriptChannel` of the funscript (`stroke` with the file's `range`
+applied and its `inverted` flag kept as `inverted`; embedded axes with their
+own range/inverted applied by the parser), `mapping` the device's effective
+mapping without the channels that are off. `clock` is a `PlaybackClock`:
+`scriptMs()` = video time (video.js time when available) × 1000 + scene offset
++ *Latency compensation*, undefined without a video; `playing()`; and
+`onChange(cb)` with `play`, `pause` (also on waiting), `seek` (also when the
+scene offset changes), `ended` and `scene`. It is cheap to call at 100 Hz.
+`stopNow()`, `nudge()`, `test()` and `disconnect()` reach self-timed devices
+like any other; on pause, seek and stop they must output nothing until the
+clock plays again.
+
+**Plugin settings of a driver** go through `src/stash/pluginConfig.ts`:
+`readPluginConfig(id)`, `mergePluginConfig(id, patch)` (stash's
+`configurePlugin` replaces a plugin's whole map, so this reads, merges and
+writes, one merge at a time; a key set to `undefined` is removed) and
+`readOtherPluginConfig("TCodePlayer")` for a one-time import. Keep structured
+values as JSON strings.
 
 ## Lovense protocol notes
 
