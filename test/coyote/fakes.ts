@@ -32,7 +32,10 @@ export const CAL: Calibration = {
 export class GattCounter {
   inFlight = 0;
   max = 0;
-  enter(): void {
+  /** the characteristic of every operation, in start order */
+  log: string[] = [];
+  enter(what = ""): void {
+    this.log.push(what);
     this.inFlight++;
     this.max = Math.max(this.max, this.inFlight);
   }
@@ -53,7 +56,7 @@ export class BinCharacteristic extends FakeCharacteristic {
     this.counter = counter;
     if (counter) {
       const wrap = (fn: (b: BufferSource) => Promise<void>) => async (b: BufferSource) => {
-        counter.enter();
+        counter.enter(this.uuid);
         try {
           await fn(b);
         } finally {
@@ -66,7 +69,7 @@ export class BinCharacteristic extends FakeCharacteristic {
     }
   }
   async readValue(): Promise<DataView> {
-    this.counter?.enter();
+    this.counter?.enter(`read:${this.uuid}`);
     try {
       await Promise.resolve();
       this.reads++;
