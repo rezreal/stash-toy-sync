@@ -1,8 +1,13 @@
 // /toysync: the devices (connect, disconnect, test, stop, battery, live
 // meters, calibration), how scripts map onto them with the mapping of the
 // open or last scene, and a summary of the settings.
+//
+// Devices are grouped by kind; each instance is a card with its nickname
+// (renamed inline), and every kind can get another instance ("Add another
+// …"); extra instances can be removed again (after a confirmation).
 import { isCalibratable } from "../devices/calibration.ts";
 import type { DeviceEntry } from "../devices/manager.ts";
+import { ordinalOf } from "../devices/instances.ts";
 import { DRIVERS, driverLabel } from "../devices/registry.ts";
 import type { DeviceKind, ToyDevice } from "../devices/types.ts";
 import { getRuntime, type Runtime } from "../runtime.ts";
@@ -14,7 +19,7 @@ import { pluginApi } from "../ui/pluginApi.ts";
 import { isSelfTimed } from "../mapping/effective.ts";
 import { renderDriverComponent } from "../ui/ErrorBoundary.tsx";
 import { TcodePlayerNotice } from "../ui/TcodePlayerNotice.tsx";
-import { calibrationSummary, connectionText, mappingRows, settingsRows } from "./devicesView.ts";
+import { calibrationSummary, connectionText, instanceGroups, mappingRows, settingsRows } from "./devicesView.ts";
 import { calibrateStartHref } from "./links.ts";
 import { SafetyBox } from "./SafetyBox.tsx";
 
@@ -45,11 +50,9 @@ export function DevicesPage() {
           Devices
         </h2>
         {kinds.length === 0 && <p className="toysync-muted">No device drivers are installed in this build.</p>}
-        <div className="toysync-cards">
-          {kinds.map((kind) => (
-            <DeviceCard key={kind} rt={rt} kind={kind} entry={entries.find((e) => e.kind === kind)} />
-          ))}
-        </div>
+        {instanceGroups(kinds, entries).map((g) => (
+          <KindGroup key={g.kind} rt={rt} kind={g.kind} entries={g.entries} />
+        ))}
         <SafetyBox compact />
       </section>
 
@@ -75,33 +78,135 @@ export function DevicesPage() {
   );
 }
 
-function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry | undefined }) {
-  const { Link } = pluginApi().libraries.ReactRouterDOM;
-  const { rt, kind } = props;
-  const device: ToyDevice | undefined = rt.manager.device(kind);
-  const status = props.entry?.status ?? device?.status() ?? { connection: "disconnected" as const };
+/** one device kind: its instances' cards and "Add another …" */
+function KindGroup(props: { rt: Runtime; kind: DeviceKind; entries: DeviceEntry[] }) {
+  const { rt, kind, entries } = props;
   const label = driverLabel(kind);
   const description = DRIVERS.get(kind)?.info.description;
+  const headId = `toysync-kind-${kind.replace(/[^a-zA-Z0-9_-]/g, "_")}-h`;
+  // no instance at all: the driver failed to start (logged)
+  if (entries.length === 0) return null;
+  return (
+    <div className="toysync-kind" role="group" aria-labelledby={headId}>
+      <div className="toysync-kind-head">
+        <h3 id={headId} className="toysync-h3">
+          {label}
+        </h3>
+        {description && <span className="toysync-muted toysync-small">{description}</span>}
+      </div>
+      <div className="toysync-cards">
+        {entries.map((e) => (
+          <DeviceCard key={e.instanceId} rt={rt} entry={e} />
+        ))}
+      </div>
+      <div className="toysync-row">
+        <button type="button" className="btn btn-link btn-sm toysync-btn" onClick={() => rt.manager.addInstance(kind)}>
+          Add another {label}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** the instance's nickname, renamed in place (Enter or leaving the field saves, Escape cancels) */
+function InstanceName(props: { rt: Runtime; instanceId: string; name: string }) {
+  const { rt, instanceId, name } = props;
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(name);
+  const input = React.useRef<HTMLInputElement | null>(null);
+  const button = React.useRef<HTMLButtonElement | null>(null);
+  // the field can blur after Enter / Escape already finished it: finish once
+  const open = React.useRef(false);
+  React.useEffect(() => {
+    if (editing) input.current?.select();
+  }, [editing]);
+  const finish = (save: boolean) => {
+    if (!open.current) return;
+    open.current = false;
+    if (save) rt.manager.renameInstance(instanceId, draft);
+    setEditing(false);
+    // back to the button, so keyboard users don't lose their place
+    window.setTimeout(() => button.current?.focus(), 0);
+  };
+  if (editing) {
+    return (
+      <input
+        ref={input}
+        type="text"
+        className="form-control form-control-sm toysync-name-input"
+        aria-label={`Name of ${name}`}
+        maxLength={60}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(true);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            finish(false);
+          }
+        }}
+        onBlur={() => finish(true)}
+      />
+    );
+  }
+  return (
+    <span className="toysync-name">
+      <span className="toysync-h3 toysync-name-text">{name}</span>
+      <button
+        ref={button}
+        type="button"
+        className="btn btn-link btn-sm toysync-btn toysync-rename"
+        aria-label={`Rename ${name}`}
+        title="Rename"
+        onClick={() => {
+          setDraft(name);
+          open.current = true;
+          setEditing(true);
+        }}
+      >
+        Rename
+      </button>
+    </span>
+  );
+}
+
+function DeviceCard(props: { rt: Runtime; entry: DeviceEntry }) {
+  const { Link } = pluginApi().libraries.ReactRouterDOM;
+  const { rt, entry } = props;
+  const { instanceId, kind } = entry;
+  const device: ToyDevice | undefined = rt.manager.device(instanceId);
+  const status = entry.status;
+  const label = entry.name;
   const connected = status.connection === "connected";
   const busy = connected || status.connection === "connecting";
   const calibratable = isCalibratable(device) ? device : undefined;
   const name = status.device || label;
   const selfTimed = isSelfTimed(device);
-  const program = selfTimed ? rt.manager.program(kind) : null;
+  const program = selfTimed ? rt.manager.program(instanceId) : null;
+  const removable = ordinalOf(instanceId) > 1;
   let actions: readonly { id: string; label: string; run(): void }[] = [];
   try {
     actions = device?.actions?.() ?? [];
   } catch (err) {
-    console.error(`[toysync] ${kind} actions failed`, err);
+    console.error(`[toysync] ${instanceId} actions failed`, err);
   }
+  const remove = () => {
+    const ok = window.confirm(
+      `Remove “${label}”? It is disconnected and this browser forgets which ${driverLabel(kind)} it was. ` +
+        "Its calibration stays stored, and scenes keep its saved mapping.",
+    );
+    if (ok) rt.manager.removeInstance(instanceId);
+  };
 
   return (
     <div className={`toysync-card${status.needsCalibration ? " toysync-card-attention" : ""}`}>
       <div className="toysync-card-head">
-        <h3 className="toysync-h3">{label}</h3>
+        <InstanceName rt={rt} instanceId={instanceId} name={label} />
         <span className={`toysync-pill toysync-pill-${status.connection}`}>{connectionText(status)}</span>
       </div>
-      {description && <div className="toysync-muted">{description}</div>}
       {selfTimed && (
         <div className="toysync-card-line toysync-muted">
           Times its own output from the video.{" "}
@@ -133,7 +238,7 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
       {status.needsCalibration && (
         <div className="toysync-attention" role="status">
           Needs calibration before it outputs anything.{" "}
-          <Link to={calibrateStartHref(kind)}>Calibrate</Link>
+          <Link to={calibrateStartHref(instanceId)}>Calibrate</Link>
         </div>
       )}
       <div className="toysync-card-actions">
@@ -142,13 +247,13 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
             type="button"
             className="btn btn-primary btn-sm toysync-btn"
             // the click is the user gesture the Bluetooth picker needs
-            onClick={() => void rt.manager.connect(kind)}
+            onClick={() => void rt.manager.connect(instanceId)}
           >
             Connect
           </button>
         )}
         {busy && (
-          <button type="button" className="btn btn-secondary btn-sm toysync-btn" onClick={() => rt.manager.disconnect(kind)}>
+          <button type="button" className="btn btn-secondary btn-sm toysync-btn" onClick={() => rt.manager.disconnect(instanceId)}>
             Disconnect
           </button>
         )}
@@ -171,7 +276,7 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
               try {
                 a.run();
               } catch (err) {
-                console.error(`[toysync] ${kind} action ${a.id} failed`, err);
+                console.error(`[toysync] ${instanceId} action ${a.id} failed`, err);
               }
             }}
           >
@@ -179,9 +284,14 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
           </button>
         ))}
         {calibratable && !status.needsCalibration && (
-          <Link to={calibrateStartHref(kind)} className="btn btn-link btn-sm toysync-btn">
+          <Link to={calibrateStartHref(instanceId)} className="btn btn-link btn-sm toysync-btn">
             {calibratable.calibration() ? "Recalibrate" : "Calibrate"}
           </Link>
+        )}
+        {removable && (
+          <button type="button" className="btn btn-link btn-sm toysync-btn toysync-remove" aria-label={`Remove ${label}`} onClick={remove}>
+            Remove
+          </button>
         )}
       </div>
       {device?.settingsPanel !== undefined && (

@@ -1,9 +1,8 @@
 // The compact bar under stash's scene player. Stateless: everything comes
-// in as props (see ToySyncSlot.tsx). Lists the connected devices (name,
-// battery, meter), links to the devices page, a calibration link when an
-// e-stim device needs one, and Stop for everything.
+// in as props (see ToySyncSlot.tsx). Lists the connected devices by
+// instance name (battery, meter), links to the devices page, a calibration
+// link when an e-stim device needs one, and Stop for everything.
 import type { DeviceEntry } from "../devices/manager.ts";
-import type { DeviceKind } from "../devices/types.ts";
 import { calibrateStartHref, DEVICES_ROUTE } from "../pages/links.ts";
 import { pluginApi } from "../ui/pluginApi.ts";
 import { OutputMeters } from "../ui/Meter.tsx";
@@ -11,13 +10,11 @@ import { deviceMessages, gainNote, liveEntries, needingCalibration, scriptNote, 
 
 export interface ToySyncBarProps {
   entries: DeviceEntry[];
-  /** registered kinds, for the Connect buttons */
-  kinds: DeviceKind[];
-  label(kind: DeviceKind): string;
   interactive: boolean;
   scriptState: ScriptState;
   gain: number;
-  onConnect(kind: DeviceKind): void;
+  /** an instance id: the click is the user gesture its picker needs */
+  onConnect(instanceId: string): void;
   onStop(): void;
 }
 
@@ -27,7 +24,7 @@ export function ToySyncBar(props: ToySyncBarProps) {
   const calibrate = needingCalibration(props.entries);
   const note = scriptNote(props.interactive, props.scriptState);
   const gainText = gainNote(props.gain);
-  const nameOf = (e: DeviceEntry) => e.status.device || props.label(e.kind);
+  const nameOf = (e: DeviceEntry) => e.name;
   const messages = deviceMessages(props.entries, nameOf);
 
   return (
@@ -37,9 +34,9 @@ export function ToySyncBar(props: ToySyncBarProps) {
           Toy Sync
         </Link>
         {live.map((e) => (
-          <span key={e.kind} className="toysync-dev">
-            <span className="toysync-device" title={nameOf(e)}>
-              {e.status.connection === "connecting" ? `${props.label(e.kind)}: connecting…` : nameOf(e)}
+          <span key={e.instanceId} className="toysync-dev">
+            <span className="toysync-device" title={e.status.device ? `${nameOf(e)} · ${e.status.device}` : nameOf(e)}>
+              {e.status.connection === "connecting" ? `${nameOf(e)}: connecting…` : nameOf(e)}
             </span>
             {e.status.connection === "connected" && e.status.battery !== undefined && (
               <span className="toysync-battery" title="Battery">
@@ -50,21 +47,21 @@ export function ToySyncBar(props: ToySyncBarProps) {
           </span>
         ))}
         {live.length === 0 &&
-          props.kinds.map((kind) => (
+          props.entries.map((e) => (
             <button
-              key={kind}
+              key={e.instanceId}
               type="button"
               className="btn btn-secondary btn-sm toysync-btn toysync-connect"
-              onClick={() => props.onConnect(kind)}
-              aria-label={`Connect a ${props.label(kind)} over Bluetooth`}
+              onClick={() => props.onConnect(e.instanceId)}
+              aria-label={`Connect ${nameOf(e)}`}
             >
-              Connect {props.label(kind)}
+              Connect {nameOf(e)}
             </button>
           ))}
         {gainText && <span className="toysync-gain">{gainText}</span>}
         {calibrate && (
-          <Link to={calibrateStartHref(calibrate.kind)} className="toysync-calibrate">
-            Calibrate {props.label(calibrate.kind)}
+          <Link to={calibrateStartHref(calibrate.instanceId)} className="toysync-calibrate">
+            Calibrate {nameOf(calibrate)}
           </Link>
         )}
         {live.length > 0 && (

@@ -1,12 +1,13 @@
 // The scene page's "Interactive" tab: the scene's script channels with a
-// preview line each, and per device a mapping row per channel (target,
+// preview line each, and per device instance (by name; every instance has
+// its own mapping, saved under its instance id) a mapping row per channel (target,
 // invert, min/max window, Test), its live output, its preview component and
 // the scene offset. Edits go to the scene map store's working copy and apply
 // live (the binder pushes them to the engine and the devices); Save writes
 // toysync_map. The scene itself is bound by the player slot.
 import type { DeviceEntry } from "../devices/manager.ts";
 import { DRIVERS, driverLabel } from "../devices/registry.ts";
-import type { ChannelMapping, DeviceKind, ScriptChannel, ToyDevice } from "../devices/types.ts";
+import type { ChannelMapping, ScriptChannel, ToyDevice } from "../devices/types.ts";
 import { isSelfTimed } from "../mapping/effective.ts";
 import { isEmptySceneMap, compactSceneMap } from "../mapping/sceneMap.ts";
 import type { SceneMapState } from "../mapping/store.ts";
@@ -75,8 +76,8 @@ export function SceneTab(props: { scene?: StashScene }) {
               <span className="toysync-muted toysync-small">positive = devices run earlier; adds to the latency setting</span>
             </div>
           </section>
-          {rt.manager.kinds().map((kind) => (
-            <DeviceSection key={kind} rt={rt} kind={kind} entry={entries.find((e) => e.kind === kind)} channels={channels} st={st} />
+          {entries.map((e) => (
+            <DeviceSection key={e.instanceId} rt={rt} entry={e} channels={channels} st={st} />
           ))}
           <SaveBar rt={rt} st={st} />
         </>
@@ -128,24 +129,26 @@ function PercentInput(props: { id: string; label: string; value: number; onChang
   );
 }
 
-function DeviceSection(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry | undefined; channels: readonly ScriptChannel[]; st: SceneMapState }) {
-  const { rt, kind, channels, st } = props;
-  const device: ToyDevice | undefined = rt.manager.device(kind);
+function DeviceSection(props: { rt: Runtime; entry: DeviceEntry; channels: readonly ScriptChannel[]; st: SceneMapState }) {
+  const { rt, entry, channels, st } = props;
+  const { instanceId, kind } = entry;
+  const device: ToyDevice | undefined = rt.manager.device(instanceId);
   if (!device) return null;
-  const status = props.entry?.status ?? device.status();
+  const status = entry.status;
   const connected = status.connection === "connected";
   const busy = connected || status.connection === "connecting";
-  const label = driverLabel(kind);
+  const label = entry.name;
   const name = status.device || label;
   const targets = targetsFor(device);
   const groups = groupTargets(targets);
   const eff = rt.binder.mappingFor(device);
-  const saved = st.edit.devices[kind]?.mapping ?? {};
-  const options = st.edit.devices[kind]?.options;
+  // this instance's own entry: nothing is shared with other instances of the kind
+  const saved = st.edit.devices[instanceId]?.mapping ?? {};
+  const options = st.edit.devices[instanceId]?.options;
   const selfTimed = isSelfTimed(device);
-  const headId = `toysync-tab-${domId(kind)}-h`;
+  const headId = `toysync-tab-${domId(instanceId)}-h`;
 
-  const set = (ch: string, patch: Partial<ChannelMapping>) => rt.sceneMaps.setChannel(kind, ch, { ...eff[ch], ...patch } as ChannelMapping);
+  const set = (ch: string, patch: Partial<ChannelMapping>) => rt.sceneMaps.setChannel(instanceId, ch, { ...eff[ch], ...patch } as ChannelMapping);
   const test = (ch: string) => {
     if (typeof device.testChannel === "function") device.testChannel(ch);
     else device.test();
@@ -161,17 +164,19 @@ function DeviceSection(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntr
         {connected && <OutputMeters output={status.output} name={name} />}
         <span className="toysync-grow" />
         {!busy && (
-          <button type="button" className="btn btn-primary btn-sm toysync-btn" onClick={() => void rt.manager.connect(kind)}>
+          <button type="button" className="btn btn-primary btn-sm toysync-btn" onClick={() => void rt.manager.connect(instanceId)}>
             Connect
           </button>
         )}
         {busy && (
-          <button type="button" className="btn btn-secondary btn-sm toysync-btn" onClick={() => rt.manager.disconnect(kind)}>
+          <button type="button" className="btn btn-secondary btn-sm toysync-btn" onClick={() => rt.manager.disconnect(instanceId)}>
             Disconnect
           </button>
         )}
       </div>
       <div className="toysync-muted toysync-small">
+        {label !== driverLabel(kind) ? `${driverLabel(kind)} · ` : ""}
+        {status.device && status.device !== label ? `${status.device} · ` : ""}
         {DRIVERS.get(kind)?.info.description}
         {selfTimed ? " · times its own output from the video" : ""}
       </div>
@@ -180,7 +185,7 @@ function DeviceSection(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntr
           {status.message}
         </div>
       )}
-      {renderDriverComponent(device.preview, { device, program: rt.manager.program(kind) }, `${label} preview`)}
+      {renderDriverComponent(device.preview, { device, program: rt.manager.program(instanceId) }, `${label} preview`)}
       {targets.length === 0 ? (
         <p className="toysync-muted">This device offers no mapping targets.</p>
       ) : (
@@ -202,7 +207,7 @@ function DeviceSection(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntr
               {channels.map((ch) => {
                 const m = eff[ch.id] ?? { target: OFF_TARGET, invert: false, min: 0, max: 100 };
                 const off = m.target === OFF_TARGET;
-                const base = `toysync-${domId(kind)}-${domId(ch.id)}`;
+                const base = `toysync-${domId(instanceId)}-${domId(ch.id)}`;
                 const custom = saved[ch.id] !== undefined;
                 const known = off || targets.some((t) => t.id === m.target);
                 return (
@@ -270,7 +275,7 @@ function DeviceSection(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntr
                           type="button"
                           className="btn btn-link btn-sm toysync-btn"
                           aria-label={`${label}: ${ch.id} back to the default`}
-                          onClick={() => rt.sceneMaps.setChannel(kind, ch.id, undefined)}
+                          onClick={() => rt.sceneMaps.setChannel(instanceId, ch.id, undefined)}
                         >
                           Default
                         </button>

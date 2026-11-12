@@ -1,5 +1,6 @@
 // What the devices page shows, as plain data. Pure, tested.
-import type { Calibration, ChannelCalibration, DeviceStatus } from "../devices/types.ts";
+import type { DeviceEntry } from "../devices/manager.ts";
+import type { Calibration, ChannelCalibration, DeviceKind, DeviceStatus } from "../devices/types.ts";
 import type { AxisTarget } from "../sync/axes.ts";
 import type { EffectiveMapping } from "../sync/engine.ts";
 import type { Mode, Settings } from "../sync/settings.ts";
@@ -15,6 +16,11 @@ export function connectionText(s: DeviceStatus): string {
     default:
       return "Not connected";
   }
+}
+
+/** the device instances grouped by kind, in `kinds` order (a kind without instances keeps an empty group) */
+export function instanceGroups(kinds: readonly DeviceKind[], entries: readonly DeviceEntry[]): { kind: DeviceKind; entries: DeviceEntry[] }[] {
+  return kinds.map((kind) => ({ kind, entries: entries.filter((e) => e.kind === kind) }));
 }
 
 function channelText(ch: ChannelCalibration): string {

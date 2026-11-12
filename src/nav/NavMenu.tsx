@@ -1,14 +1,13 @@
 // The device menu in stash's navbar: an icon with a status dot (grey: nothing
 // connected, green: connected, glowing: outputting) that opens a panel with
-// every registered device (Connect / Disconnect, the driver's own actions),
+// every device instance by name (Connect / Disconnect, the driver's own actions),
 // Stop all, and links to the devices and calibration pages.
 //
 // A disclosure (button + panel), not an ARIA menu: the panel mixes buttons
 // and links. Escape or a click outside closes it and returns focus to the
 // button; opening it focuses its first control.
 import type { DeviceEntry } from "../devices/manager.ts";
-import { driverLabel } from "../devices/registry.ts";
-import type { DeviceAction, DeviceKind } from "../devices/types.ts";
+import type { DeviceAction } from "../devices/types.ts";
 import { CALIBRATE_ROUTE, DEVICES_ROUTE } from "../pages/links.ts";
 import { connectionText } from "../pages/devicesView.ts";
 import { getRuntime, type Runtime } from "../runtime.ts";
@@ -33,12 +32,12 @@ function WaveIcon() {
   );
 }
 
-function safeActions(rt: Runtime, kind: DeviceKind): readonly DeviceAction[] {
-  const d = rt.manager.device(kind);
+function safeActions(rt: Runtime, instanceId: string): readonly DeviceAction[] {
+  const d = rt.manager.device(instanceId);
   try {
     return d?.actions?.() ?? [];
   } catch (err) {
-    console.error(`[toysync] ${kind} actions failed`, err);
+    console.error(`[toysync] ${instanceId} actions failed`, err);
     return [];
   }
 }
@@ -108,7 +107,7 @@ export function NavMenu() {
           {entries.length === 0 && <div className="toysync-muted">No device drivers in this build.</div>}
           <ul className="toysync-nav-devices">
             {entries.map((e) => (
-              <NavDevice key={e.kind} rt={rt} entry={e} />
+              <NavDevice key={e.instanceId} rt={rt} entry={e} />
             ))}
           </ul>
           <div className="toysync-row">
@@ -132,20 +131,22 @@ export function NavMenu() {
 
 function NavDevice(props: { rt: Runtime; entry: DeviceEntry }) {
   const { rt, entry } = props;
-  const { kind, status } = entry;
-  const label = driverLabel(kind);
+  const { instanceId, status } = entry;
+  const label = entry.name;
   const busy = status.connection === "connected" || status.connection === "connecting";
-  const actions = safeActions(rt, kind);
+  const actions = safeActions(rt, instanceId);
   return (
     <li className="toysync-nav-device">
       <div className="toysync-row">
         <span className={`toysync-nav-dot toysync-nav-dot-${status.connection === "connected" ? "connected" : "off"}`} aria-hidden="true" />
         <span className="toysync-grow">
-          {status.device || label}
-          <span className="toysync-muted toysync-small"> · {connectionText(status)}</span>
+          {label}
+          <span className="toysync-muted toysync-small">
+            {status.device && status.device !== label ? ` · ${status.device}` : ""} · {connectionText(status)}
+          </span>
         </span>
         {busy ? (
-          <button type="button" className="btn btn-secondary btn-sm toysync-btn" aria-label={`Disconnect ${label}`} onClick={() => rt.manager.disconnect(kind)}>
+          <button type="button" className="btn btn-secondary btn-sm toysync-btn" aria-label={`Disconnect ${label}`} onClick={() => rt.manager.disconnect(instanceId)}>
             Disconnect
           </button>
         ) : (
@@ -154,7 +155,7 @@ function NavDevice(props: { rt: Runtime; entry: DeviceEntry }) {
             className="btn btn-primary btn-sm toysync-btn"
             aria-label={`Connect ${label}`}
             // the click is the user gesture the Bluetooth / serial picker needs
-            onClick={() => void rt.manager.connect(kind)}
+            onClick={() => void rt.manager.connect(instanceId)}
           >
             Connect
           </button>
@@ -171,7 +172,7 @@ function NavDevice(props: { rt: Runtime; entry: DeviceEntry }) {
                 try {
                   a.run();
                 } catch (err) {
-                  console.error(`[toysync] ${kind} action ${a.id} failed`, err);
+                  console.error(`[toysync] ${instanceId} action ${a.id} failed`, err);
                 }
               }}
             >

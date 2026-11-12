@@ -8,8 +8,6 @@ import { fileKeyOf, type StashFileLike } from "../mapping/sceneMap.ts";
 import { mediaEventToPlayback } from "./clock.ts";
 import { playerGetters } from "./getters.ts";
 import type { Funscript } from "../funscript/parse.ts";
-import { driverLabel } from "../devices/registry.ts";
-import type { DeviceKind } from "../devices/types.ts";
 import { getRuntime } from "../runtime.ts";
 import { useDeviceEntries, useGain, useSyncedSettings } from "../ui/hooks.ts";
 import { readPlayback, VIDEO_PLAYER_ID } from "./playback.ts";
@@ -134,9 +132,9 @@ export function ToySyncSlot(props: { scene?: StashScene }) {
   }, [rt]);
 
   const onConnect = React.useCallback(
-    (kind: DeviceKind) => {
+    (instanceId: string) => {
       // called in the click handler: the user gesture the Bluetooth picker needs
-      void rt.manager.connect(kind);
+      void rt.manager.connect(instanceId);
     },
     [rt],
   );
@@ -151,8 +149,6 @@ export function ToySyncSlot(props: { scene?: StashScene }) {
   return (
     <ToySyncBar
       entries={entries}
-      kinds={rt.manager.kinds()}
-      label={(kind) => driverLabel(kind)}
       interactive={interactive}
       scriptState={load.state}
       gain={gain}
