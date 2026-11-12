@@ -11,6 +11,9 @@ import type { Settings } from "../sync/settings.ts";
 import { useDeviceEntries, useLastScene, useSyncedSettings } from "../ui/hooks.ts";
 import { OutputMeters } from "../ui/Meter.tsx";
 import { pluginApi } from "../ui/pluginApi.ts";
+import { isSelfTimed } from "../mapping/effective.ts";
+import { renderDriverComponent } from "../ui/ErrorBoundary.tsx";
+import { TcodePlayerNotice } from "../ui/TcodePlayerNotice.tsx";
 import { calibrationSummary, connectionText, mappingRows, settingsRows } from "./devicesView.ts";
 import { calibrateStartHref } from "./links.ts";
 import { SafetyBox } from "./SafetyBox.tsx";
@@ -34,6 +37,8 @@ export function DevicesPage() {
         Drives your devices from the funscript of the scene playing in stash's player. Connect them here or from the bar
         under the player; output only runs while a scene with a script plays, and stops on pause, seek and stop.
       </p>
+
+      <TcodePlayerNotice />
 
       <section aria-labelledby="toysync-devices-h">
         <h2 id="toysync-devices-h" className="toysync-h2">
@@ -81,6 +86,14 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
   const busy = connected || status.connection === "connecting";
   const calibratable = isCalibratable(device) ? device : undefined;
   const name = status.device || label;
+  const selfTimed = isSelfTimed(device);
+  const program = selfTimed ? rt.manager.program(kind) : null;
+  let actions: readonly { id: string; label: string; run(): void }[] = [];
+  try {
+    actions = device?.actions?.() ?? [];
+  } catch (err) {
+    console.error(`[toysync] ${kind} actions failed`, err);
+  }
 
   return (
     <div className={`toysync-card${status.needsCalibration ? " toysync-card-attention" : ""}`}>
@@ -89,6 +102,12 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
         <span className={`toysync-pill toysync-pill-${status.connection}`}>{connectionText(status)}</span>
       </div>
       {description && <div className="toysync-muted">{description}</div>}
+      {selfTimed && (
+        <div className="toysync-card-line toysync-muted">
+          Times its own output from the video.{" "}
+          {program ? `Playing scene ${program.sceneId}'s script (${Object.keys(program.mapping).length} mapped channels).` : "No scene with a script open."}
+        </div>
+      )}
       {(status.device || status.battery !== undefined) && (
         <div className="toysync-card-line">
           {status.device && <span>{status.device}</span>}
@@ -143,12 +162,31 @@ function DeviceCard(props: { rt: Runtime; kind: DeviceKind; entry: DeviceEntry |
             Stop
           </button>
         )}
+        {actions.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            className="btn btn-secondary btn-sm toysync-btn"
+            onClick={() => {
+              try {
+                a.run();
+              } catch (err) {
+                console.error(`[toysync] ${kind} action ${a.id} failed`, err);
+              }
+            }}
+          >
+            {a.label}
+          </button>
+        ))}
         {calibratable && !status.needsCalibration && (
           <Link to={calibrateStartHref(kind)} className="btn btn-link btn-sm toysync-btn">
             {calibratable.calibration() ? "Recalibrate" : "Calibrate"}
           </Link>
         )}
       </div>
+      {device?.settingsPanel !== undefined && (
+        <div className="toysync-card-panel">{renderDriverComponent(device.settingsPanel, { device }, `${label} settings`)}</div>
+      )}
     </div>
   );
 }
@@ -181,6 +219,11 @@ function MappingSection(props: { scene: SceneInfo | undefined; settings: Setting
           auto-detection.
         </li>
         <li>Gain from other plugins scales intensity and the channels, never balance or speed.</li>
+        <li>
+          A scene can have its own mapping per device: open the scene's <strong>Interactive</strong> tab to change
+          what each script channel drives, invert it, narrow its range or shift the scene's timing, and save it to the
+          scene. What follows is the default without one.
+        </li>
       </ul>
       <h3 className="toysync-h3">{scene ? "This scene" : "Current scene"}</h3>
       {!scene && <p className="toysync-muted">Open a scene to see how its script is mapped.</p>}
