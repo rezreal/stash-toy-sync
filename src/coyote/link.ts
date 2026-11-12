@@ -139,6 +139,13 @@ export const OP_TIMEOUT_MS = 2000;
  * "connecting".
  */
 export const CONNECT_TIMEOUT_MS = 20_000;
+/**
+ * A picker request that has been pending this long is treated as lost (the
+ * chooser can end up behind a window, or Chrome never settles the promise):
+ * the next Connect click asks again. Shorter than this, a click is the same
+ * request (a double-click must not open two choosers).
+ */
+export const PICKER_STALE_MS = 3000;
 /** the profile's service discovery and notification setup after the link is up */
 export const OPEN_TIMEOUT_MS = 15_000;
 export const STOP_TIMEOUT_MS = 500;
@@ -289,6 +296,21 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   let cancelOpen: (() => void) | undefined;
   /** where the pending attempt is: the picker may be open (choosing) or the link is being set up (opening) */
   let phase: "choosing" | "opening" | undefined;
+  /** the pending picker request is old enough to be replaced by a new click */
+  let pickerStale = false;
+  let staleTimer: unknown;
+  function setPhase(next: "choosing" | "opening" | undefined): void {
+    phase = next;
+    pickerStale = false;
+    if (staleTimer !== undefined) timers.clearTimeout(staleTimer);
+    staleTimer = undefined;
+    if (next === "choosing") {
+      staleTimer = timers.setTimeout(() => {
+        staleTimer = undefined;
+        pickerStale = true;
+      }, PICKER_STALE_MS);
+    }
+  }
   let generation = 0;
   let retryTimer: unknown;
   let attempt = 0;
@@ -573,7 +595,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
     } catch (e) {
       throw new LinkFailure(pickErrorMessage(e, profile.notChosenMessage));
     }
-    mustPick = false;
+    if (gen === generation) mustPick = false; // a replaced request's late answer changes nothing
     const other = claims.heldByOther(d.id);
     if (other !== undefined) throw new LinkFailure(alreadyConnectedMessage(other));
     return d;
@@ -695,7 +717,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         throw new LinkFailure(secure === false ? MSG_INSECURE : MSG_NO_BLUETOOTH);
       }
       if (mode === "pick") setStatus({ connection: "connecting", message: `Looking for the ${profile.label}…` });
-      if (gen === generation) phase = "choosing";
+      if (gen === generation) setPhase("choosing");
       const dev = await chooseDevice(bt, mode, gen);
       if (gen !== generation) return;
       if (!dev) {
@@ -715,7 +737,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
         dev.addEventListener("gattserverdisconnected", onGattDisconnected);
       }
       writeStored(dev.id);
-      phase = "opening";
+      setPhase("opening");
       const ok = await open(dev, gen, mode);
       if (!ok || gen !== generation) return;
       attempt = 0;
@@ -747,14 +769,16 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
   function begin(mode: "pick" | "silent"): Promise<void> {
     if (st.connection === "connected" && isReady) return Promise.resolve();
     if (pending) {
-      // A Connect click while the link is being set up means "try again now":
-      // drop the stuck attempt (and abort its pending GATT connect) instead of
-      // handing back the same promise forever. While the picker is open it
-      // stays the same attempt.
-      if (mode !== "pick" || phase !== "opening") return pending;
+      // A Connect click while the link is being set up, or after the picker
+      // request has been pending a while, means "try again now": drop the
+      // stuck attempt (and abort its pending GATT connect) instead of handing
+      // back the same promise forever. A fresh picker request stays the same
+      // attempt, so a double-click doesn't open two choosers.
+      const stuck = phase === "opening" || (phase === "choosing" && pickerStale);
+      if (mode !== "pick" || !stuck) return pending;
       generation++;
       pending = undefined;
-      phase = undefined;
+      setPhase(undefined);
       abortOpening();
       detach();
     }
@@ -773,7 +797,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       .finally(() => {
         if (gen === generation) {
           pending = undefined;
-          phase = undefined;
+          setPhase(undefined);
         }
       });
     return pending;
@@ -786,7 +810,7 @@ export function createCoyoteLink(opts: LinkOptions): CoyoteLink {
       wanted = false;
       const gen = ++generation;
       pending = undefined;
-      phase = undefined;
+      setPhase(undefined);
       attempt = 0;
       abortOpening();
       if (retryTimer !== undefined) timers.clearTimeout(retryTimer);

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createClaimRegistry } from "../../src/devices/claims.ts";
 import type { InstanceInfo } from "../../src/devices/instances.ts";
 import { createCoyoteV3 } from "../../src/coyote/v3.ts";
-import { CONNECT_TIMEOUT_MS, MSG_WAITING_TURN } from "../../src/coyote/link.ts";
+import { CONNECT_TIMEOUT_MS, MSG_WAITING_TURN, PICKER_STALE_MS } from "../../src/coyote/link.ts";
 import type { BluetoothRemoteGATTServer } from "../../src/lovense/bluetooth.d.ts";
 import { FakeBluetooth, MemStorage } from "../fakes/bluetooth.ts";
 import { FakeClock, flush } from "../fakes/clock.ts";
@@ -100,6 +100,69 @@ describe("a Coyote that never answers", () => {
     await flush();
     assert.equal(calls, 2, "a second connect was started");
     assert.equal(first.status().connection, "connected");
+    r.done();
+  });
+});
+
+describe("a picker request that never settles", () => {
+  /** a requestDevice() whose first call hangs (the chooser is lost), later ones answer */
+  function lostPicker(r: ReturnType<typeof rig>) {
+    r.bt.granted = []; // nothing remembered or granted: Connect has to ask the picker
+    const answer = r.bt.requestDevice.bind(r.bt);
+    let calls = 0;
+    r.bt.requestDevice = (options) => (++calls === 1 ? Promise.resolve().then(() => new Promise(() => undefined)) : answer(options)) as ReturnType<typeof answer>;
+    return () => calls;
+  }
+
+  it("a quick second click is the same request (a double-click opens one chooser)", async () => {
+    const r = rig();
+    const calls = lostPicker(r);
+    const first = r.make(r.one);
+    void first.connect();
+    await flush();
+    void first.connect();
+    await flush();
+    assert.equal(calls(), 1);
+    assert.equal(first.status().connection, "connecting");
+    r.done();
+  });
+
+  it("a click after it has been pending a while asks the picker again", async () => {
+    const r = rig();
+    const calls = lostPicker(r);
+    const first = r.make(r.one);
+    void first.connect();
+    await flush();
+    r.clock.advance(PICKER_STALE_MS);
+    const again = first.connect();
+    await flush();
+    await again;
+    await flush();
+    assert.equal(calls(), 2, "a new picker request");
+    assert.equal(first.status().connection, "connected");
+    r.done();
+  });
+
+  it("the lost request answering late changes nothing", async () => {
+    const r = rig();
+    r.bt.granted = [];
+    let release: (d: typeof r.c1.dev) => void = () => undefined;
+    const answer = r.bt.requestDevice.bind(r.bt);
+    let calls = 0;
+    r.bt.requestDevice = (options) =>
+      (++calls === 1 ? new Promise<typeof r.c1.dev>((res) => (release = res)) : answer(options)) as ReturnType<typeof answer>;
+    const first = r.make(r.one);
+    void first.connect();
+    await flush();
+    r.clock.advance(PICKER_STALE_MS);
+    await first.connect();
+    await flush();
+    assert.equal(first.status().connection, "connected");
+    release(r.c2.dev); // the old chooser finally returns the other Coyote
+    await flush();
+    assert.equal(first.status().connection, "connected");
+    assert.equal(first.id, "c3-A", "still the device from the second request");
+    assert.equal(r.c2.dev.gatt.connects, 0);
     r.done();
   });
 });

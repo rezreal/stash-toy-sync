@@ -256,7 +256,9 @@ kind (two Coyotes, two Lovense toys, two TCode strokers, …).
   a second one waits ("Waiting for another device to finish connecting…"),
   because two simultaneous connects make some Bluetooth stacks hang. A
   Coyote that doesn't answer within 20 s is given up (and retried); clicking
-  Connect on a device stuck connecting starts over.
+  Connect on a device stuck connecting starts over, and so does a click when
+  the Bluetooth picker has been pending for a few seconds without showing
+  (a double-click doesn't open two).
 - **Never twice.** A physical device is held by one Toy Sync device at a
   time: reconnecting skips devices another one holds, and picking one that
   is already connected elsewhere is refused (`Already connected as "…"`).

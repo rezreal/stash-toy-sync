@@ -7,7 +7,7 @@ description: >-
   scene's channel mapping in its Interactive tab (scene custom field
   toysync_map, reads TCode Player's tcode_map); a small bar under the player
   shows what is connected (Chrome or Edge, stash over https or localhost).
-version: 0.4.1
+version: 0.4.2
 url: https://github.com/rezreal/stash-toy-sync
 
 ui:
