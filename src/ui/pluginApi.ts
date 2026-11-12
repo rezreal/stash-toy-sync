@@ -30,6 +30,11 @@ export interface PluginApiShape {
       useHistory: () => History;
       useLocation: () => { pathname: string; search: string };
     };
+    /** react-bootstrap 1.x; the scene page's tabs are a Tab.Container of Nav.Link / Tab.Pane by eventKey */
+    Bootstrap?: {
+      Nav?: { Item?: ReactTypes.ComponentType<any>; Link?: ReactTypes.ComponentType<any> };
+      Tab?: { Pane?: ReactTypes.ComponentType<any> };
+    };
   };
   patch: {
     /** fn(...props, result) returns the new result; runs inside the component's render, so no hooks */

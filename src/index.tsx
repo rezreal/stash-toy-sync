@@ -1,10 +1,12 @@
-// Plugin entry: the drivers, the scene player patch, the pages, the hook
-// contract for other plugins, and a best-effort stop when the page goes away.
+// Plugin entry: the drivers, the scene player patch, the scene page's
+// Interactive tab, the navbar device menu, the pages, the hook contract for
+// other plugins, and a best-effort stop when the page goes away.
 // Drivers register themselves with the device registry on import
 // (registerDriver in src/devices/registry.ts), before the runtime is made.
 import "./lovense/register.ts";
 import "./coyote/register.ts";
 import { installHook } from "./hook.ts";
+import { registerSceneTab } from "./scene/patch.tsx";
 import { registerPages } from "./pages/register.tsx";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
 import { getRuntime } from "./runtime.ts";
@@ -24,6 +26,7 @@ installHook(window, {
   },
 });
 registerScenePlayerPatch();
+registerSceneTab();
 registerPages();
 
 // tab closed or navigated away: stop the toy (best effort, the page may be gone before the write)

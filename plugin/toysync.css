@@ -1,9 +1,12 @@
-/* Toy Sync. Everything is scoped under .toysync (the bar under the player)
-   or .toysync-page (the plugin's pages), so stash's own pages are never
-   affected. Fits stash's dark Bootstrap 4 theme. */
+/* Toy Sync. Everything is scoped under .toysync (the bar under the player),
+   .toysync-page (the plugin's pages), .toysync-tab (the scene page's
+   Interactive tab) or .toysync-nav (the navbar menu), so stash's own pages
+   are never affected. Fits stash's dark Bootstrap 4 theme. */
 
 .toysync,
-.toysync-page {
+.toysync-page,
+.toysync-tab,
+.toysync-nav {
   --ts-text: #f5f8fa;
   --ts-muted: #a7b6c2;
   --ts-panel: rgba(16, 22, 26, 0.45);
@@ -420,5 +423,219 @@
 @media (prefers-reduced-motion: reduce) {
   .toysync-meter-fill {
     transition: none;
+  }
+}
+
+/* --- shared small pieces ----------------------------------------------------- */
+
+.toysync-grow {
+  flex: 1 1 auto;
+}
+
+.toysync-small {
+  font-size: 0.8125rem;
+}
+
+.toysync-nowrap {
+  white-space: nowrap;
+}
+
+.toysync-badge {
+  border: 1px solid var(--ts-accent);
+  border-radius: 0.6rem;
+  color: var(--ts-accent);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+}
+
+.toysync-card-panel {
+  border-top: 1px solid var(--ts-border);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+/* --- the scene page's Interactive tab ----------------------------------------- */
+
+.toysync-tab {
+  padding: 0.5rem 0;
+}
+
+.toysync-tab section {
+  margin-bottom: 1rem;
+}
+
+.toysync-tab .toysync-card-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.toysync-tab-device {
+  background: var(--ts-panel);
+  border: 1px solid var(--ts-border);
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.toysync-channels {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.toysync-channel {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(6rem, 10rem) 6rem 1fr;
+  padding: 0.125rem 0;
+}
+
+.toysync-channel-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toysync-spark-wrap {
+  height: 28px;
+  min-width: 0;
+  position: relative;
+}
+
+.toysync-spark {
+  color: var(--ts-accent);
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.toysync-playhead {
+  background: #f29d49;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 2px;
+}
+
+.toysync-table-scroll {
+  overflow-x: auto;
+}
+
+.toysync-map-table td,
+.toysync-map-table th {
+  vertical-align: middle;
+}
+
+.toysync-row-off th,
+.toysync-row-off td {
+  opacity: 0.6;
+}
+
+.toysync-num {
+  display: inline-block;
+  width: 4.5rem;
+}
+
+.toysync-num-wide {
+  width: 6.5rem;
+}
+
+.toysync-select {
+  min-width: 9rem;
+}
+
+.toysync-save {
+  border-top: 1px solid var(--ts-border);
+  padding-top: 0.5rem;
+}
+
+/* --- the navbar menu ------------------------------------------------------------ */
+
+.toysync-nav {
+  display: inline-block;
+  position: relative;
+}
+
+.toysync-nav-toggle {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 0.25rem;
+  position: relative;
+}
+
+.toysync-nav-dot {
+  background: #5c7080;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+  height: 8px;
+  width: 8px;
+}
+
+.toysync-nav-dot-connected {
+  background: var(--ts-ok);
+}
+
+.toysync-nav-dot-live {
+  animation: toysync-glow 1.2s ease-in-out infinite;
+  background: var(--ts-ok);
+  box-shadow: 0 0 6px 2px rgba(63, 185, 80, 0.8);
+}
+
+@keyframes toysync-glow {
+  50% {
+    box-shadow: 0 0 2px 1px rgba(63, 185, 80, 0.4);
+  }
+}
+
+.toysync-nav-panel {
+  background: #30404d;
+  border: 1px solid var(--ts-border);
+  border-radius: 0.25rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 0.875rem;
+  max-width: calc(100vw - 1rem);
+  padding: 0.5rem 0.75rem;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  width: 20rem;
+  z-index: 1050;
+}
+
+.toysync-nav-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.toysync-nav-devices {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.toysync-nav-device {
+  border-bottom: 1px solid var(--ts-border);
+  padding: 0.25rem 0;
+}
+
+.toysync-nav-actions {
+  padding-left: 1rem;
+}
+
+.toysync-nav .toysync-nav-link {
+  color: var(--ts-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toysync-nav-dot-live {
+    animation: none;
   }
 }

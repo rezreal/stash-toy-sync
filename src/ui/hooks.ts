@@ -1,6 +1,8 @@
 // React hooks over the page-wide runtime, shared by the player bar and the
 // pages. React comes from PluginApi (injected global).
 import type { DeviceEntry, DeviceManager } from "../devices/manager.ts";
+import type { SceneBinder } from "../mapping/binder.ts";
+import type { SceneMapState, SceneMapStore } from "../mapping/store.ts";
 import type { Runtime } from "../runtime.ts";
 import type { GainCombiner } from "../sync/gain.ts";
 import type { SceneInfo, SceneTracker } from "../sync/scene.ts";
@@ -59,4 +61,21 @@ export function useTicker(on: boolean, ms: number): void {
     const id = window.setInterval(() => setN((n) => n + 1), ms);
     return () => window.clearInterval(id);
   }, [on, ms]);
+}
+
+/** the open scene's mapping state (saved, working copy, dirty, saving), live */
+export function useSceneMapState(store: SceneMapStore): SceneMapState | undefined {
+  const [st, setSt] = React.useState<SceneMapState | undefined>(() => store.state());
+  React.useEffect(() => {
+    setSt(store.state());
+    return store.onChange(() => setSt(store.state()));
+  }, [store]);
+  return st;
+}
+
+/** re-renders whenever the binder's effective mappings or scene change; returns a change counter */
+export function useBinder(binder: SceneBinder): number {
+  const [n, setN] = React.useState(0);
+  React.useEffect(() => binder.onChange(() => setN((x) => x + 1)), [binder]);
+  return n;
 }
