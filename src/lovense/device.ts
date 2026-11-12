@@ -87,6 +87,8 @@ export interface LovenseDevice {
   status(): LovenseStatus;
   onStatus(cb: (s: LovenseStatus) => void): () => void;
   setNamePrefix(prefix: string | undefined): void;
+  /** the Bluetooth id of the chosen toy (or the one remembered from an earlier visit) */
+  deviceId(): string | undefined;
 }
 
 export const DEVICE_KEY = "lovense.device";
@@ -654,6 +656,7 @@ export function createLovenseDevice(opts: LovenseDeviceOptions = {}): LovenseDev
     setNamePrefix(prefix) {
       namePrefix = prefix?.trim() || undefined;
     },
+    deviceId: () => device?.id ?? readStored(storage),
   };
 
   /** like detach() but keeps tx until the final 0 has been queued and written */
