@@ -30,10 +30,11 @@ working for this version (see *Hook contract*).
    Web Bluetooth.
 2. **Secure page:** open stash over **https** or **http://localhost**. Web
    Bluetooth is disabled on plain http pages.
-3. **Install the plugin:** add the package source (the `index.yml` built by
-   `./build.sh`) under Settings › Plugins › Available Plugins, or copy
-   `toysync.yml`, `toysync.js` and `toysync.css` into a `toysync` folder in
-   stash's `plugins` directory and reload plugins.
+3. **Install the plugin:** Settings › Plugins › Available Plugins › Add
+   Source with `https://rezreal.github.io/stash-toy-sync/index.yml`, then
+   install Toy Sync from it. Or copy `toysync.yml`, `toysync.js` and
+   `toysync.css` into a `toysync` folder in stash's `plugins` directory and
+   reload plugins.
 4. **Turn the device on** and make sure its vendor app (Lovense Remote /
    Connect, DG-Lab) is **not connected to it**. A device connected to a phone
    stops advertising and won't appear in the browser.
@@ -345,6 +346,9 @@ npm install
 npm run check      # typecheck, tests (node --test, fakes only), bundle
 ./build.sh         # dist/: plugin zip + index.yml (a stash plugin source)
 ```
+
+Every push to `main` type-checks, tests, builds and publishes the package
+source to GitHub Pages (`.github/workflows/release.yml`).
 
 Node 22 runs the TypeScript tests directly (type stripping), so the code uses
 erasable syntax only. React comes from `window.PluginApi` at runtime and is
