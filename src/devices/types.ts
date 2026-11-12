@@ -115,7 +115,7 @@ export interface ScriptChannel {
 
 /** How one script channel drives one device target. min/max are the 0..100 window the channel is lerped into. */
 export interface ChannelMapping {
-  /** a MappingTarget id of the device, or "off" (src/mapping/effective.ts: OFF_TARGET) */
+  /** a MappingTarget id of the device, or "off" (src/mapping/targets.ts: OFF_TARGET) */
   target: string;
   invert?: boolean;
   min?: number;
