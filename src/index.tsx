@@ -6,6 +6,7 @@
 import "./lovense/register.ts";
 import "./coyote/register.ts";
 import { installHook } from "./hook.ts";
+import { registerNavMenu } from "./nav/patch.tsx";
 import { registerSceneTab } from "./scene/patch.tsx";
 import { registerPages } from "./pages/register.tsx";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
@@ -27,6 +28,7 @@ installHook(window, {
 });
 registerScenePlayerPatch();
 registerSceneTab();
+registerNavMenu();
 registerPages();
 
 // tab closed or navigated away: stop the toy (best effort, the page may be gone before the write)
