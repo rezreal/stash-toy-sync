@@ -68,7 +68,7 @@ function useFunscript(sceneId: string | undefined): ScriptLoad {
       },
       (err: unknown) => {
         if (!alive) return;
-        console.warn("[lovense] funscript failed to load", err);
+        console.warn("[toysync] funscript failed to load", err);
         setLoad({ sceneId, state: "error" });
       },
     );

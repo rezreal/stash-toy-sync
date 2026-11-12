@@ -1,10 +1,10 @@
-// Bundles src/index.tsx into plugin/lovense.js. React comes from
+// Bundles src/index.tsx into plugin/toysync.js. React comes from
 // window.PluginApi at runtime and is never bundled.
 import * as esbuild from "esbuild";
 
 const options = {
   entryPoints: ["src/index.tsx"],
-  outfile: "plugin/lovense.js",
+  outfile: "plugin/toysync.js",
   bundle: true,
   format: "iife",
   target: "es2020",

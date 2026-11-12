@@ -1,4 +1,4 @@
-# Lovense Sync
+# Toy Sync
 
 A **UI-only** [stash](https://github.com/stashapp/stash) plugin (v0.31.0) that
 drives Lovense **vibrators** over **Web Bluetooth** from a scene's funscript
@@ -15,7 +15,7 @@ It never touches stash's Handy/interactive client; both can run side by side.
    Bluetooth is disabled on plain http pages.
 3. **Install the plugin:** add the package source (the `index.yml` built by
    `./build.sh`) under Settings › Plugins › Available Plugins, or copy
-   `lovense.yml`, `lovense.js` and `lovense.css` into a `lovense` folder in
+   `toysync.yml`, `toysync.js` and `toysync.css` into a `toysync` folder in
    stash's `plugins` directory and reload plugins.
 4. **Turn the toy on** and make sure the **Lovense Remote / Connect app is not
    connected to it** (close the app or disconnect the toy there). A toy that is
@@ -76,7 +76,7 @@ wanted level wins), and never overlaps writes.
 
 ## Settings
 
-Settings › Plugins › Lovense Sync. All optional.
+Settings › Plugins › Toy Sync. All optional.
 
 | Setting | Type | Default | Meaning |
 | --- | --- | --- | --- |

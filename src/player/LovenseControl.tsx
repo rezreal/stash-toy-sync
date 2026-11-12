@@ -23,42 +23,42 @@ export function LovenseControl(props: LovenseControlProps) {
   const gainText = gainNote(gain);
 
   return (
-    <div className="lovense-sync" role="group" aria-label="Lovense Sync">
-      <div className="lovense-sync-row">
+    <div className="toysync" role="group" aria-label="Toy Sync">
+      <div className="toysync-row">
         {connected || connecting ? (
           <>
-            <span className="lovense-sync-brand">Lovense</span>
-            <span className="lovense-sync-device" title={status.device}>
+            <span className="toysync-brand">Lovense</span>
+            <span className="toysync-device" title={status.device}>
               {connecting ? "Connecting…" : deviceLabel(status)}
             </span>
             {connected && status.battery !== undefined && (
-              <span className="lovense-sync-battery" title="Battery">
+              <span className="toysync-battery" title="Battery">
                 {status.battery} %
               </span>
             )}
             {connected && (
-              <span className="lovense-sync-meter-wrap">
+              <span className="toysync-meter-wrap">
                 <span
-                  className="lovense-sync-meter"
+                  className="toysync-meter"
                   role="meter"
                   aria-label="Vibration level"
                   aria-valuemin={0}
                   aria-valuemax={MAX_LEVEL}
                   aria-valuenow={level}
                 >
-                  <span className="lovense-sync-meter-fill" style={{ width: `${(level / MAX_LEVEL) * 100}%` }} />
+                  <span className="toysync-meter-fill" style={{ width: `${(level / MAX_LEVEL) * 100}%` }} />
                 </span>
-                <span className="lovense-sync-level" aria-hidden="true">
+                <span className="toysync-level" aria-hidden="true">
                   {level}
                 </span>
               </span>
             )}
-            {gainText && <span className="lovense-sync-gain">{gainText}</span>}
-            <span className="lovense-sync-actions">
+            {gainText && <span className="toysync-gain">{gainText}</span>}
+            <span className="toysync-actions">
               {connected && (
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm lovense-sync-btn"
+                  className="btn btn-secondary btn-sm toysync-btn"
                   onClick={props.onTest}
                   aria-label="Test: vibrate for one second"
                 >
@@ -67,7 +67,7 @@ export function LovenseControl(props: LovenseControlProps) {
               )}
               <button
                 type="button"
-                className="btn btn-danger btn-sm lovense-sync-btn"
+                className="btn btn-danger btn-sm toysync-btn"
                 onClick={props.onStop}
                 aria-label="Stop the toy and disconnect"
               >
@@ -78,7 +78,7 @@ export function LovenseControl(props: LovenseControlProps) {
         ) : (
           <button
             type="button"
-            className="btn btn-secondary btn-sm lovense-sync-btn lovense-sync-connect"
+            className="btn btn-secondary btn-sm toysync-btn toysync-connect"
             onClick={props.onConnect}
             aria-label="Connect a Lovense toy over Bluetooth"
           >
@@ -87,11 +87,11 @@ export function LovenseControl(props: LovenseControlProps) {
         )}
       </div>
       {status.message && (
-        <div className={status.connection === "error" ? "lovense-sync-message lovense-sync-error" : "lovense-sync-message"} role="status">
+        <div className={status.connection === "error" ? "toysync-message toysync-error" : "toysync-message"} role="status">
           {status.message}
         </div>
       )}
-      {note && <div className="lovense-sync-note">{note}</div>}
+      {note && <div className="toysync-note">{note}</div>}
     </div>
   );
 }

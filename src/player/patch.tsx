@@ -15,6 +15,6 @@ export function registerScenePlayerPatch(): void {
   pluginApi().patch.after("ScenePlayer", (...args: unknown[]) => {
     const props = args[0] as { scene?: StashScene } | undefined;
     const result = args[args.length - 1];
-    return appendSlot(result, <LovenseSlot key="lovense-sync" scene={props?.scene} />, React as unknown as ReactLike);
+    return appendSlot(result, <LovenseSlot key="toysync" scene={props?.scene} />, React as unknown as ReactLike);
   });
 }

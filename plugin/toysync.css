@@ -1,25 +1,25 @@
-/* Lovense Sync. Everything is scoped under .lovense-sync so stash's own
+/* Toy Sync. Everything is scoped under .toysync so stash's own
    pages are never affected. Fits stash's dark Bootstrap 4 theme. */
 
-.lovense-sync {
-  --ls-text: #f5f8fa;
-  --ls-muted: #a7b6c2;
-  --ls-panel: rgba(16, 22, 26, 0.45);
-  --ls-border: rgba(138, 155, 168, 0.25);
-  --ls-meter-bg: #30404d;
-  --ls-meter: #e05a9a;
-  --ls-error: #e5534b;
+.toysync {
+  --ts-text: #f5f8fa;
+  --ts-muted: #a7b6c2;
+  --ts-panel: rgba(16, 22, 26, 0.45);
+  --ts-border: rgba(138, 155, 168, 0.25);
+  --ts-meter-bg: #30404d;
+  --ts-meter: #e05a9a;
+  --ts-error: #e5534b;
 
-  background: var(--ls-panel);
-  border: 1px solid var(--ls-border);
+  background: var(--ts-panel);
+  border: 1px solid var(--ts-border);
   border-radius: 0.25rem;
-  color: var(--ls-text);
+  color: var(--ts-text);
   font-size: 0.875rem;
   margin: 0.25rem 0 0.5rem;
   padding: 0.25rem 0.5rem;
 }
 
-.lovense-sync-row {
+.toysync-row {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -27,32 +27,32 @@
   min-height: 32px;
 }
 
-.lovense-sync-brand {
+.toysync-brand {
   font-weight: 600;
 }
 
-.lovense-sync-device {
+.toysync-device {
   max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lovense-sync-battery,
-.lovense-sync-gain,
-.lovense-sync-level {
-  color: var(--ls-muted);
+.toysync-battery,
+.toysync-gain,
+.toysync-level {
+  color: var(--ts-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.lovense-sync-meter-wrap {
+.toysync-meter-wrap {
   align-items: center;
   display: inline-flex;
   gap: 0.4rem;
 }
 
-.lovense-sync-meter {
-  background: var(--ls-meter-bg);
+.toysync-meter {
+  background: var(--ts-meter-bg);
   border-radius: 3px;
   display: inline-block;
   height: 8px;
@@ -60,42 +60,42 @@
   width: 8rem;
 }
 
-.lovense-sync-meter-fill {
-  background: var(--ls-meter);
+.toysync-meter-fill {
+  background: var(--ts-meter);
   display: block;
   height: 100%;
   transition: width 80ms linear;
 }
 
-.lovense-sync-level {
+.toysync-level {
   min-width: 1.5em;
   text-align: right;
 }
 
-.lovense-sync-actions {
+.toysync-actions {
   display: inline-flex;
   gap: 0.4rem;
   margin-left: auto;
 }
 
-.lovense-sync .lovense-sync-btn {
+.toysync .toysync-btn {
   min-height: 32px;
   min-width: 32px;
 }
 
-.lovense-sync-message,
-.lovense-sync-note {
-  color: var(--ls-muted);
+.toysync-message,
+.toysync-note {
+  color: var(--ts-muted);
   font-size: 0.8125rem;
   padding: 0.125rem 0 0.125rem;
 }
 
-.lovense-sync-message.lovense-sync-error {
-  color: var(--ls-error);
+.toysync-message.toysync-error {
+  color: var(--ts-error);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lovense-sync-meter-fill {
+  .toysync-meter-fill {
     transition: none;
   }
 }

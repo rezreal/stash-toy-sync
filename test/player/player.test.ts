@@ -63,7 +63,7 @@ describe("appendSlot", () => {
     createElement: (type, props, ...children) => ({ type, key: (props as { key?: unknown } | null)?.key ?? null, props: { ...(props as object), children } }),
   };
   const div = { type: "div", key: null, props: {} };
-  const slot = { type: "Slot", key: "lovense-sync", props: {} };
+  const slot = { type: "Slot", key: "toysync", props: {} };
 
   it("puts the slot after stash's element in an unkeyed fragment", () => {
     const out = appendSlot(div, slot, R) as { type: unknown; props: { children: unknown[] } };

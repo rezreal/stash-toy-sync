@@ -1,16 +1,16 @@
-name: Lovense Sync
+name: Toy Sync
 description: >-
   Drives Lovense vibrators over Web Bluetooth from the scene's funscript while
   it plays in stash's own scene player. Connect the toy with the control under
   the player (Chrome or Edge, stash over https or localhost).
-version: 0.1.0
+version: 0.2.0
 url: https://github.com/stashapp/stash
 
 ui:
   javascript:
-    - lovense.js
+    - toysync.js
   css:
-    - lovense.css
+    - toysync.css
 
 settings:
   mode:

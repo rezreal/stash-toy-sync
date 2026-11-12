@@ -36,7 +36,7 @@ export function createListeners<T>(): Listeners<T> {
         try {
           cb(v);
         } catch (err) {
-          console.error("[lovense] listener failed", err);
+          console.error("[toysync] listener failed", err);
         }
       }
     },

@@ -3,7 +3,8 @@
 // - window "lovense:gain" CustomEvent { source, gain | null } -> gain combiner
 // - window "lovense:status" CustomEvent { ...status } whenever the status or
 //   the sent level changes; level-only changes at most every 200 ms (5/s)
-// - window.stashLovense = { version: 1, status(), connect() }
+// - window.stashToySync = { version: 1, status(), connect() }; the same
+//   object as window.stashLovense, a deprecated alias kept for one version
 import type { LovenseDevice, LovenseStatus } from "./lovense/device.ts";
 import { listenGainEvents, type EventTargetLike, type GainCombiner } from "./sync/gain.ts";
 import { defaultNow, GLOBAL_TIMERS, type Timers } from "./util/timers.ts";
@@ -56,7 +57,7 @@ export function createStatusBroadcaster(
     try {
       target.dispatchEvent(new CustomEvent(STATUS_EVENT, { detail: { ...latest } }));
     } catch (err) {
-      console.error("[lovense] status event failed", err);
+      console.error("[toysync] status event failed", err);
     }
   }
 
@@ -88,8 +89,11 @@ export interface HookDeps {
   now?: () => number;
 }
 
-/** installs the gain listener, the status events and window.stashLovense; returns an uninstall */
-export function installHook(win: DispatchTarget & { stashLovense?: StashLovenseApi }, deps: HookDeps): () => void {
+/** installs the gain listener, the status events and window.stashToySync; returns an uninstall */
+export function installHook(
+  win: DispatchTarget & { stashToySync?: StashLovenseApi; stashLovense?: StashLovenseApi },
+  deps: HookDeps,
+): () => void {
   const stopGains = listenGainEvents(win, deps.gains);
   const broadcaster = createStatusBroadcaster(win, { timers: deps.timers, now: deps.now });
   const stopStatus = deps.device.onStatus((s) => broadcaster.push(s));
@@ -100,11 +104,14 @@ export function installHook(win: DispatchTarget & { stashLovense?: StashLovenseA
       void deps.device.connect();
     },
   };
+  win.stashToySync = api;
+  // deprecated alias for plugins written against Lovense Sync 0.1
   win.stashLovense = api;
   return () => {
     stopGains();
     stopStatus();
     broadcaster.dispose();
+    if (win.stashToySync === api) delete win.stashToySync;
     if (win.stashLovense === api) delete win.stashLovense;
   };
 }

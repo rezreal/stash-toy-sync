@@ -32,7 +32,7 @@ export function pluginApi(): PluginApiShape {
 }
 
 /** Plugin id = manifest file name without extension. */
-export const PLUGIN_ID = "lovense";
+export const PLUGIN_ID = "toysync";
 
 /** Reads this plugin's settings from stash's configuration (may be empty). */
 export function usePluginSettings(): Record<string, unknown> {

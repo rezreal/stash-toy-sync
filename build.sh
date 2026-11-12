@@ -6,9 +6,9 @@
 # Needs node (for the bundle) and python3.
 set -euo pipefail
 
-ID="lovense"
-NAME="Lovense Sync"
-DESC="Drives Lovense vibrators over Web Bluetooth from the scene's funscript while it plays in stash's scene player."
+ID="toysync"
+NAME="Toy Sync"
+DESC="Drives Lovense vibrators and other Bluetooth toys (e-stim drivers plug in) from the scene's funscript while it plays in stash's scene player."
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$ROOT/dist"

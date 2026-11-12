@@ -66,15 +66,16 @@ describe("status broadcaster", () => {
 });
 
 describe("installHook", () => {
-  it("exposes window.stashLovense, gain events and status events", async () => {
+  it("exposes window.stashToySync (and the stashLovense alias), gain events and status events", async () => {
     const clock = new FakeClock();
     const toy = fakeToy();
     const device = createLovenseDevice({ bluetooth: new FakeBluetooth(toy.dev), now: clock.now, timers: clock, storage: new MemStorage() });
     const gains = createGainCombiner();
-    const win = new EventTarget() as EventTarget & { stashLovense?: StashLovenseApi };
+    const win = new EventTarget() as EventTarget & { stashToySync?: StashLovenseApi; stashLovense?: StashLovenseApi };
     const events = captured(win);
     const uninstall = installHook(win, { device, gains, timers: clock, now: clock.now });
-    const api = win.stashLovense!;
+    const api = win.stashToySync!;
+    assert.equal(win.stashLovense, api, "deprecated alias");
     assert.equal(api.version, 1);
     assert.equal(api.status().connection, "disconnected");
     api.connect();
@@ -87,6 +88,7 @@ describe("installHook", () => {
     assert.equal(gains.gain(), 0.25);
 
     uninstall();
+    assert.equal(win.stashToySync, undefined);
     assert.equal(win.stashLovense, undefined);
     win.dispatchEvent(new CustomEvent(GAIN_EVENT, { detail: { source: "skilltree", gain: 1 } }));
     assert.equal(gains.gain(), 0.25);
