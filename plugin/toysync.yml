@@ -1,12 +1,13 @@
 name: Toy Sync
 description: >-
-  Drives Bluetooth toys (Lovense vibrators; e-stim drivers plug in) from the
-  scene's funscript while it plays in stash's own scene player. Devices and
+  Drives Lovense vibrators, DG-LAB Coyote 2.0/3.0 e-stim (Web Bluetooth),
+  TCode strokers - OSR2, SR6, SSR1 (Web Serial) - and the Hismith PiuPiu from
+  the scene's funscript while it plays in stash's own scene player. Devices and
   e-stim calibration live on the /toysync page and in a navbar menu; each
   scene's channel mapping in its Interactive tab (scene custom field
   toysync_map, reads TCode Player's tcode_map); a small bar under the player
   shows what is connected (Chrome or Edge, stash over https or localhost).
-version: 0.3.0
+version: 0.3.1
 url: https://github.com/rezreal/stash-toy-sync
 
 ui:

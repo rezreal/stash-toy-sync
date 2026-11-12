@@ -8,7 +8,7 @@ set -euo pipefail
 
 ID="toysync"
 NAME="Toy Sync"
-DESC="Drives Lovense vibrators and other Bluetooth toys (e-stim drivers plug in) from the scene's funscript while it plays in stash's scene player."
+DESC="Drives Lovense vibrators, DG-LAB Coyote 2.0/3.0 e-stim, TCode strokers (OSR2, SR6, SSR1) and the Hismith PiuPiu from the scene's funscript, with one per-scene mapping for all of them."
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$ROOT/dist"
