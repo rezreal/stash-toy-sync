@@ -6,6 +6,7 @@ import "./lovense/register.ts";
 // DG-Lab Coyote e-stim drivers (branch "coyote"): uncomment once src/coyote/ exists.
 // import "./coyote/register.ts";
 import { installHook } from "./hook.ts";
+import { registerPages } from "./pages/register.tsx";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
 import { getRuntime } from "./runtime.ts";
 
@@ -24,6 +25,7 @@ installHook(window, {
   },
 });
 registerScenePlayerPatch();
+registerPages();
 
 // tab closed or navigated away: stop the toy (best effort, the page may be gone before the write)
 const stopOnUnload = () => {

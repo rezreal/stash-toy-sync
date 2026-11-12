@@ -4,8 +4,33 @@
 // populated once stash has rendered.
 import type * as ReactTypes from "react";
 
+export interface LinkProps {
+  to: string;
+  className?: string;
+  title?: string;
+  "aria-label"?: string;
+  onClick?: (event: ReactTypes.MouseEvent) => void;
+  children?: ReactTypes.ReactNode;
+}
+
+export interface History {
+  push(path: string): void;
+  replace(path: string): void;
+}
+
 export interface PluginApiShape {
   React: typeof import("react");
+  register: {
+    /** stash mounts it as a plain, non-exact <Route path> next to its own routes */
+    route: (path: string, component: ReactTypes.ComponentType) => void;
+  };
+  libraries: {
+    ReactRouterDOM: {
+      Link: ReactTypes.ComponentType<LinkProps>;
+      useHistory: () => History;
+      useLocation: () => { pathname: string; search: string };
+    };
+  };
   patch: {
     /** fn(...props, result) returns the new result; runs inside the component's render, so no hooks */
     after: (component: string, fn: (...args: any[]) => unknown) => void;

@@ -69,3 +69,8 @@ export const DRIVERS: DriverRegistry = createDriverRegistry();
 export function registerDriver(kind: DeviceKind, factory: DriverFactory, info?: DriverInfo): void {
   DRIVERS.register(kind, factory, info);
 }
+
+/** the display name of a kind ("DG-Lab Coyote 3.0") */
+export function driverLabel(kind: DeviceKind, registry: DriverRegistry = DRIVERS): string {
+  return registry.get(kind)?.info.label ?? DEFAULT_DRIVER_INFO[kind]?.label ?? kind;
+}

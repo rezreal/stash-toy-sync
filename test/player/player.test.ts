@@ -2,7 +2,17 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { appendSlot, type ReactLike } from "../../src/player/appendSlot.ts";
 import { findPlayer, readPlayback, type RootLike, type VideoLike } from "../../src/player/playback.ts";
-import { deviceLabel, gainNote, scriptNote, shouldRender } from "../../src/player/view.ts";
+import type { DeviceEntry } from "../../src/devices/manager.ts";
+import type { DeviceStatus } from "../../src/devices/types.ts";
+import {
+  deviceMessages,
+  gainNote,
+  liveEntries,
+  meterPercent,
+  needingCalibration,
+  scriptNote,
+  shouldRender,
+} from "../../src/player/view.ts";
 
 function video(p: Partial<VideoLike> = {}): VideoLike {
   return { paused: false, ended: false, seeking: false, readyState: 4, currentTime: 12, ...p };
@@ -87,19 +97,45 @@ describe("appendSlot", () => {
   });
 });
 
-describe("control view", () => {
-  it("renders for interactive scenes, or while a toy is connected", () => {
-    assert.equal(shouldRender(true, { connection: "disconnected" }), true);
-    assert.equal(shouldRender(false, { connection: "disconnected" }), false);
-    assert.equal(shouldRender(false, { connection: "error" }), false);
-    assert.equal(shouldRender(false, { connection: "connected" }), true);
-    assert.equal(shouldRender(false, { connection: "connecting" }), true);
+const entry = (kind: DeviceEntry["kind"], status: DeviceStatus): DeviceEntry => ({ kind, id: `${kind}-1`, status });
+
+describe("bar view", () => {
+  it("renders for interactive scenes, or while a device is connected", () => {
+    assert.equal(shouldRender(true, []), true);
+    assert.equal(shouldRender(false, []), false);
+    assert.equal(shouldRender(false, [entry("lovense", { connection: "error" })]), false);
+    assert.equal(shouldRender(false, [entry("lovense", { connection: "disconnected" }), entry("coyote-v3", { connection: "connected" })]), true);
+    assert.equal(shouldRender(false, [entry("lovense", { connection: "connecting" })]), true);
   });
 
-  it("labels the device", () => {
-    assert.equal(deviceLabel({ connection: "connected", device: "LVS-Lush42", model: "Lush" }), "LVS-Lush42");
-    assert.equal(deviceLabel({ connection: "connected", device: "LVS-A123", model: "Hush" }), "Hush · LVS-A123");
-    assert.equal(deviceLabel({ connection: "connected" }), "Lovense toy");
+  it("lists live devices and the one needing calibration", () => {
+    const es = [
+      entry("lovense", { connection: "disconnected" }),
+      entry("coyote-v3", { connection: "connected", needsCalibration: true }),
+      entry("coyote-v2", { connection: "connecting", needsCalibration: true }),
+    ];
+    assert.deepEqual(liveEntries(es).map((e) => e.kind), ["coyote-v3", "coyote-v2"]);
+    assert.equal(needingCalibration(es)?.kind, "coyote-v3");
+    assert.equal(needingCalibration([es[0]!]), undefined);
+  });
+
+  it("sizes meters", () => {
+    assert.equal(meterPercent(0.5), 50);
+    assert.equal(meterPercent(2), 100);
+    assert.equal(meterPercent(undefined), 0);
+    assert.equal(meterPercent(Number.NaN), 0);
+  });
+
+  it("shows errors always and other messages of live devices", () => {
+    const es = [
+      entry("lovense", { connection: "error", message: "No toy chosen." }),
+      entry("coyote-v3", { connection: "disconnected", message: "Turn it on." }),
+      entry("coyote-v2", { connection: "connecting", message: "Reconnecting…" }),
+    ];
+    assert.deepEqual(deviceMessages(es, (e) => e.kind), [
+      { text: "lovense: No toy chosen.", error: true },
+      { text: "coyote-v2: Reconnecting…", error: false },
+    ]);
   });
 
   it("explains a missing script", () => {

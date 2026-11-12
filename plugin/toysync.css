@@ -1,7 +1,9 @@
-/* Toy Sync. Everything is scoped under .toysync so stash's own
-   pages are never affected. Fits stash's dark Bootstrap 4 theme. */
+/* Toy Sync. Everything is scoped under .toysync (the bar under the player)
+   or .toysync-page (the plugin's pages), so stash's own pages are never
+   affected. Fits stash's dark Bootstrap 4 theme. */
 
-.toysync {
+.toysync,
+.toysync-page {
   --ts-text: #f5f8fa;
   --ts-muted: #a7b6c2;
   --ts-panel: rgba(16, 22, 26, 0.45);
@@ -9,11 +11,19 @@
   --ts-meter-bg: #30404d;
   --ts-meter: #e05a9a;
   --ts-error: #e5534b;
+  --ts-ok: #3fb950;
+  --ts-warn: #f0b429;
+  --ts-accent: #2b95d6;
 
+  color: var(--ts-text);
+}
+
+/* --- the bar under the player ------------------------------------------------ */
+
+.toysync {
   background: var(--ts-panel);
   border: 1px solid var(--ts-border);
   border-radius: 0.25rem;
-  color: var(--ts-text);
   font-size: 0.875rem;
   margin: 0.25rem 0 0.5rem;
   padding: 0.25rem 0.5rem;
@@ -27,28 +37,73 @@
   min-height: 32px;
 }
 
-.toysync-brand {
+.toysync .toysync-brand {
+  color: var(--ts-text);
   font-weight: 600;
 }
 
+.toysync-dev {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
 .toysync-device {
-  max-width: 16rem;
+  max-width: 14rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .toysync-battery,
-.toysync-gain,
-.toysync-level {
+.toysync-gain {
   color: var(--ts-muted);
   font-variant-numeric: tabular-nums;
 }
 
+.toysync .toysync-calibrate {
+  color: var(--ts-warn);
+}
+
+.toysync-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.toysync-btn {
+  min-height: 32px;
+  min-width: 32px;
+}
+
+.toysync-message,
+.toysync-note {
+  color: var(--ts-muted);
+  font-size: 0.8125rem;
+  padding: 0.125rem 0;
+}
+
+.toysync-error,
+.toysync-message.toysync-error {
+  color: var(--ts-error);
+}
+
+/* --- meters --------------------------------------------------------------------- */
+
+.toysync-meters,
 .toysync-meter-wrap {
   align-items: center;
   display: inline-flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
+}
+
+.toysync-meters {
+  gap: 0.6rem;
+}
+
+.toysync-meter-ch {
+  color: var(--ts-muted);
+  font-size: 0.75rem;
 }
 
 .toysync-meter {
@@ -57,7 +112,7 @@
   display: inline-block;
   height: 8px;
   overflow: hidden;
-  width: 8rem;
+  width: 6rem;
 }
 
 .toysync-meter-fill {
@@ -67,31 +122,299 @@
   transition: width 80ms linear;
 }
 
-.toysync-level {
-  min-width: 1.5em;
-  text-align: right;
+/* --- pages ---------------------------------------------------------------------- */
+
+.toysync-page {
+  margin: 0 auto;
+  max-width: 60rem;
+  padding: 1rem;
 }
 
-.toysync-actions {
-  display: inline-flex;
-  gap: 0.4rem;
-  margin-left: auto;
+.toysync-page-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
 }
 
-.toysync .toysync-btn {
-  min-height: 32px;
-  min-width: 32px;
+.toysync-h1 {
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem;
 }
 
-.toysync-message,
-.toysync-note {
+.toysync-h2 {
+  font-size: 1.25rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.toysync-h3 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.toysync-lead {
   color: var(--ts-muted);
-  font-size: 0.8125rem;
-  padding: 0.125rem 0 0.125rem;
+  max-width: 45rem;
 }
 
-.toysync-message.toysync-error {
+.toysync-muted {
+  color: var(--ts-muted);
+}
+
+.toysync-ok {
+  color: var(--ts-ok);
+}
+
+.toysync-list {
+  padding-left: 1.25rem;
+}
+
+.toysync-list li {
+  margin: 0.25rem 0;
+}
+
+.toysync-cards {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+.toysync-card {
+  background: var(--ts-panel);
+  border: 1px solid var(--ts-border);
+  border-radius: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem;
+}
+
+.toysync-card-attention {
+  border-color: var(--ts-warn);
+}
+
+.toysync-card-head {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.toysync-card-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toysync-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.toysync-attention {
+  color: var(--ts-warn);
+}
+
+.toysync-attention a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.toysync-pill {
+  border: 1px solid var(--ts-border);
+  border-radius: 999px;
+  color: var(--ts-muted);
+  font-size: 0.75rem;
+  padding: 0.05rem 0.5rem;
+  white-space: nowrap;
+}
+
+.toysync-pill-connected {
+  border-color: var(--ts-ok);
+  color: var(--ts-ok);
+}
+
+.toysync-pill-connecting {
+  border-color: var(--ts-accent);
+  color: var(--ts-accent);
+}
+
+.toysync-pill-error {
+  border-color: var(--ts-error);
   color: var(--ts-error);
+}
+
+.toysync-safety {
+  background: rgba(229, 83, 75, 0.12);
+  border: 2px solid var(--ts-error);
+  border-radius: 0.375rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+}
+
+.toysync-safety .toysync-h2 {
+  margin-top: 0;
+}
+
+.toysync-safety ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.toysync-safety-compact {
+  border-width: 1px;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.toysync-table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  max-width: 100%;
+}
+
+.toysync-table th,
+.toysync-table td {
+  border-bottom: 1px solid var(--ts-border);
+  padding: 0.3rem 0.75rem 0.3rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.toysync-settings {
+  display: grid;
+  gap: 0.2rem 1rem;
+  grid-template-columns: max-content 1fr;
+  margin: 0;
+}
+
+.toysync-settings-row {
+  display: contents;
+}
+
+.toysync-settings dt {
+  color: var(--ts-muted);
+  font-weight: normal;
+}
+
+.toysync-settings dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* --- calibration wizard --------------------------------------------------------- */
+
+.toysync-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.toysync-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+}
+
+.toysync-step {
+  background: transparent;
+  border: 1px solid var(--ts-border);
+  border-radius: 999px;
+  color: var(--ts-muted);
+  min-height: 32px;
+  padding: 0.2rem 0.75rem;
+}
+
+.toysync-step.is-current {
+  border-color: var(--ts-accent);
+  color: var(--ts-text);
+  font-weight: 600;
+}
+
+.toysync-step-body {
+  background: var(--ts-panel);
+  border: 1px solid var(--ts-border);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+}
+
+.toysync-step-body .toysync-h2 {
+  margin-top: 0;
+}
+
+.toysync-level {
+  margin: 0.75rem 0;
+}
+
+.toysync-level-row {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toysync-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.toysync-hold-wrap {
+  margin: 1rem 0 0.5rem;
+}
+
+.toysync-hold {
+  background: #30404d;
+  border: 2px solid var(--ts-accent);
+  border-radius: 0.5rem;
+  color: var(--ts-text);
+  font-size: 1.15rem;
+  font-weight: 600;
+  min-height: 4.5rem;
+  padding: 0.75rem 1rem;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  width: 100%;
+}
+
+.toysync-hold.is-held {
+  background: var(--ts-meter);
+  border-color: var(--ts-meter);
+}
+
+.toysync-hold:disabled {
+  opacity: 0.5;
+}
+
+.toysync-hold-hint {
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+}
+
+.toysync-confirm {
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.toysync-wizard-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.toysync-wizard-nav .toysync-stop {
+  margin-left: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
