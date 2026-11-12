@@ -1,25 +1,50 @@
-// The page-wide objects: one toy connection, one gain combiner, one sync
-// engine. They outlive scene changes (stash keeps the scene player mounted
-// across scenes) and are shared with the hook contract.
-import { createLovenseDevice, type LovenseDevice } from "./lovense/device.ts";
+// The page-wide objects: the settings, the devices (one per registered
+// driver), one gain combiner and one sync engine. They outlive scene changes
+// (stash keeps the scene player mounted across scenes) and are shared with
+// the hook contract and the pages.
+import { createDeviceManager, type DeviceManager } from "./devices/manager.ts";
+import type { DriverContext } from "./devices/registry.ts";
+import type { LovenseToy } from "./lovense/toy.ts";
 import { createSyncEngine, type SyncEngine } from "./sync/engine.ts";
 import { createGainCombiner, type GainCombiner } from "./sync/gain.ts";
+import { createSettingsStore, type Settings, type SettingsStore } from "./sync/settings.ts";
+import { defaultNow, GLOBAL_TIMERS } from "./util/timers.ts";
 
 export interface Runtime {
-  device: LovenseDevice;
+  settings: SettingsStore;
+  manager: DeviceManager;
   gains: GainCombiner;
   engine: SyncEngine;
+  /** applies new settings everywhere (engine, drivers); a no-op when nothing changed */
+  setSettings(s: Settings): void;
+  /** the Lovense driver, when registered (legacy status and the deprecated window.stashLovense) */
+  lovense(): LovenseToy | undefined;
 }
 
 let runtime: Runtime | undefined;
 
 export function getRuntime(): Runtime {
   if (runtime) return runtime;
-  const device = createLovenseDevice();
+  const settings = createSettingsStore();
+  const context: DriverContext = {
+    settings: () => settings.get(),
+    onSettings: (cb) => settings.onChange(cb),
+    timers: GLOBAL_TIMERS,
+    now: defaultNow,
+  };
+  const manager = createDeviceManager({ context });
   const gains = createGainCombiner();
-  const engine = createSyncEngine({ output: device, gain: () => gains.gain() });
-  // a new gain applies right away (the sender still rate-limits)
+  const engine = createSyncEngine({ output: { drive: (f) => manager.driveAll(f) }, gain: () => gains.gain() });
+  settings.onChange((s) => engine.setSettings(s));
+  // a new gain applies right away (the drivers still rate-limit)
   gains.onChange(() => engine.refresh());
-  runtime = { device, gains, engine };
+  runtime = {
+    settings,
+    manager,
+    gains,
+    engine,
+    setSettings: (s) => settings.set(s),
+    lovense: () => manager.device("lovense") as LovenseToy | undefined,
+  };
   return runtime;
 }

@@ -1,4 +1,4 @@
-// Funscript -> vibration intensity -> Lovense level. Pure and DOM-free.
+// Funscript stroke -> intensity, depth and speed. Pure and DOM-free.
 //
 // Two modes:
 // - speed (default): how fast the stroke moves right now. Intensity is the
@@ -91,31 +91,14 @@ export function positionIntensity(script: StrokeScript, t: number, invert: boole
   return invert ? 1 - v : v;
 }
 
-/** intensities below this count as none (the smoothing filter's tail never quite reaches 0) */
-export const INTENSITY_EPSILON = 0.005;
-
-export interface LevelParams {
-  /** 0..100 % */
-  strength: number;
-  /** product of the hook gains, 0..1 */
-  gain: number;
-  /** 0..20 */
-  minLevel: number;
-}
-
 /**
- * Level 0..20 for an intensity: round(20 × intensity × strength × gain),
- * raised to minLevel while the intensity is above 0 (but never above what
- * strength × gain allow at full intensity, and 0 when either is 0).
+ * Depth 0..1 at t (0 = out, 1 = deepest): (100 - pos) / 100, or pos / 100
+ * for a file marked inverted. undefined outside the script.
  */
-export function levelFor(intensity: number, p: LevelParams): number {
-  const i = clamp01(intensity);
-  const scale = clamp01(p.strength / 100) * clamp01(p.gain);
-  if (i < INTENSITY_EPSILON || scale <= 0) return 0;
-  const raw = Math.round(20 * i * scale);
-  const cap = Math.round(20 * scale);
-  const min = Math.min(Math.max(0, Math.round(p.minLevel)), cap);
-  return Math.max(0, Math.min(20, Math.max(raw, min)));
+export function strokeDepth(script: StrokeScript, t: number): number | undefined {
+  const pos = positionAt(script.actions, t);
+  if (pos === undefined) return undefined;
+  return clamp01((script.inverted ? pos : 100 - pos) / 100);
 }
 
 export const DEFAULT_SMOOTHING_MS = 150;

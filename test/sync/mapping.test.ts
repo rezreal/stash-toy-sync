@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { parseFunscript } from "../../src/funscript/parse.ts";
 import {
   createSmoother,
-  levelFor,
   positionAt,
   positionIntensity,
   segmentIndex,
@@ -11,7 +10,15 @@ import {
   strokeScript,
 } from "../../src/sync/mapping.ts";
 
+import { vibrationLevel } from "../../src/lovense/toy.ts";
+
 const a = (at: number, pos: number) => ({ at, pos });
+
+/** the old engine-side level: the engine now multiplies the gain into the frame, the Lovense driver does the rest */
+function levelFor(intensity: number, p: { strength: number; gain: number; minLevel: number }): number {
+  const g = Math.max(0, Math.min(1, p.gain));
+  return vibrationLevel(intensity * g, { strength: p.strength, minLevel: p.minLevel, gain: g });
+}
 const close = (x: number, y: number, eps = 1e-9) => assert.ok(Math.abs(x - y) < eps, `${x} ≉ ${y}`);
 
 describe("speedIntensity", () => {
@@ -66,7 +73,7 @@ describe("position mode", () => {
   });
 });
 
-describe("levelFor", () => {
+describe("intensity -> Lovense level", () => {
   const p = { strength: 100, gain: 1, minLevel: 0 };
   it("is round(20 × intensity × strength × gain)", () => {
     assert.equal(levelFor(1, p), 20);

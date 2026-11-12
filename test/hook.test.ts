@@ -8,6 +8,8 @@ import { createGainCombiner, GAIN_EVENT } from "../src/sync/gain.ts";
 import { DEFAULT_SETTINGS } from "../src/sync/settings.ts";
 import { FakeBluetooth, fakeToy, MemStorage } from "./fakes/bluetooth.ts";
 import { FakeClock, flush } from "./fakes/clock.ts";
+import { fakeContext } from "./fakes/context.ts";
+import { createLovenseToy } from "../src/lovense/toy.ts";
 
 function captured(target: EventTarget) {
   const events: LovenseStatus[] = [];
@@ -101,8 +103,9 @@ describe("end to end: script -> engine -> device", () => {
     const toy = fakeToy();
     toy.tx.clock = clock;
     const device = createLovenseDevice({ bluetooth: new FakeBluetooth(toy.dev), now: clock.now, timers: clock, storage: null });
+    const lovense = createLovenseToy(fakeContext({}, clock).ctx, { device });
     const gains = createGainCombiner();
-    const engine = createSyncEngine({ output: device, gain: () => gains.gain(), now: clock.now, timers: clock });
+    const engine = createSyncEngine({ output: lovense, gain: () => gains.gain(), now: clock.now, timers: clock });
     gains.onChange(() => engine.refresh());
     engine.setSettings({ ...DEFAULT_SETTINGS, mode: "position" });
     // deepest the whole minute: full level while playing

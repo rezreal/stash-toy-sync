@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseFunscript } from "../../src/funscript/parse.ts";
-import { createSyncEngine, STOP_HOLD_MS, TEST_MS } from "../../src/sync/engine.ts";
+import type { DriveFrame } from "../../src/devices/types.ts";
+import { vibrationLevel } from "../../src/lovense/toy.ts";
+import { createSyncEngine, STOP_HOLD_MS, TEST_MS, type PlaybackState } from "../../src/sync/engine.ts";
 import { DEFAULT_SETTINGS, type Settings } from "../../src/sync/settings.ts";
 import { FakeClock } from "../fakes/clock.ts";
 
@@ -17,14 +19,30 @@ function steadyScript(extra: Record<string, unknown> = {}) {
 function setup(settings: Partial<Settings> = {}, gain = 1) {
   const clock = new FakeClock();
   const levels: number[] = [];
+  const frames: (DriveFrame | null)[] = [];
   let g = gain;
-  const engine = createSyncEngine({
-    output: { setLevel: (l) => levels.push(l) },
+  const full: Settings = { ...DEFAULT_SETTINGS, ...settings };
+  /** what the Lovense driver makes of a frame: the old engine-level numbers */
+  const lvl = (f: DriveFrame | null) =>
+    f ? vibrationLevel(f.intensity, { strength: full.strength, minLevel: full.minLevel, gain: f.gain ?? 1 }) : 0;
+  const raw = createSyncEngine({
+    output: {
+      drive: (f) => {
+        frames.push(f);
+        levels.push(lvl(f));
+      },
+    },
     gain: () => g,
     now: clock.now,
     timers: clock,
   });
-  engine.setSettings({ ...DEFAULT_SETTINGS, ...settings });
+  raw.setSettings(full);
+  const engine = {
+    ...raw,
+    tick: (p: PlaybackState) => lvl(raw.tick(p)),
+    refresh: () => lvl(raw.refresh()),
+    level: () => lvl(raw.frame()),
+  };
   /** plays from fromSec for ms milliseconds of wall time in 50 ms ticks; returns the last level */
   const play = (fromSec: number, ms: number) => {
     let level = 0;
@@ -37,7 +55,9 @@ function setup(settings: Partial<Settings> = {}, gain = 1) {
   return {
     clock,
     engine,
+    raw,
     levels,
+    frames,
     play,
     setGain: (v: number) => {
       g = v;
@@ -195,5 +215,18 @@ describe("sync engine", () => {
     t.clock.advance(TEST_MS);
     assert.equal(t.levels.at(-1), 0);
     assert.equal(t.clock.pending, 0);
+    assert.equal(t.frames.at(-1), null);
+  });
+
+  it("sends null (silence) while not playing, without a script, and during the stop hold", () => {
+    const t = setup({ mode: "position" });
+    assert.equal(t.raw.tick({ playing: true, timeSec: 1 }), null);
+    t.raw.setScript(parseFunscript({ actions: [a(0, 0), a(60_000, 0)] }));
+    assert.equal(t.raw.tick({ playing: false, timeSec: 1 }), null);
+    assert.notEqual(t.raw.tick({ playing: true, timeSec: 1 }), null);
+    t.clock.advance(50);
+    assert.equal(t.raw.tick({ playing: false, timeSec: 1.05 }), null);
+    t.clock.advance(50);
+    assert.equal(t.raw.tick({ playing: true, timeSec: 1.05 }), null);
   });
 });

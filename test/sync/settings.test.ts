@@ -15,6 +15,11 @@ describe("parseSettings", () => {
       invert: false,
       snapPulse: true,
       namePrefix: "",
+      axisMap: "",
+      nudgeCooldownSec: 4,
+      nudgesPerMinute: 6,
+      estimSpeedMinHz: 10,
+      estimSpeedMaxHz: 100,
     });
   });
 
@@ -30,7 +35,7 @@ describe("parseSettings", () => {
         snapPulse: false,
         namePrefix: " LVS-Mine ",
       }),
-      { mode: "position", strength: 60, speedFull: 450, minLevel: 3, latencyMs: 120, invert: true, snapPulse: false, namePrefix: "LVS-Mine" },
+      { ...DEFAULT_SETTINGS, mode: "position", strength: 60, speedFull: 450, minLevel: 3, latencyMs: 120, invert: true, snapPulse: false, namePrefix: "LVS-Mine" },
     );
   });
 
@@ -59,5 +64,29 @@ describe("parseSettings", () => {
     assert.equal(parseSettings({ speedFull: -10 }).speedFull, 300);
     assert.equal(parseSettings({ strength: "abc" }).strength, 100);
     assert.equal(parseSettings({ strength: Number.NaN }).strength, 100);
+  });
+
+  it("reads the multi-device settings", () => {
+    const s = parseSettings({ axisMap: " volume=intensity, e1=a ", nudgeCooldownSec: "6", nudgesPerMinute: 3, estimSpeedMinHz: 5, estimSpeedMaxHz: "80" });
+    assert.equal(s.axisMap, "volume=intensity, e1=a");
+    assert.equal(s.nudgeCooldownSec, 6);
+    assert.equal(s.nudgesPerMinute, 3);
+    assert.equal(s.estimSpeedMinHz, 5);
+    assert.equal(s.estimSpeedMaxHz, 80);
+  });
+
+  it("keeps the nudge limits within bounds", () => {
+    assert.equal(parseSettings({ nudgeCooldownSec: 0.5 }).nudgeCooldownSec, 2);
+    assert.equal(parseSettings({ nudgesPerMinute: 50 }).nudgesPerMinute, 10);
+    assert.equal(parseSettings({ nudgesPerMinute: -1 }).nudgesPerMinute, 0);
+    assert.equal(parseSettings({ nudgesPerMinute: 0 }).nudgesPerMinute, 0);
+  });
+
+  it("falls back to the default e-stim range when it is crossed", () => {
+    const s = parseSettings({ estimSpeedMinHz: 120, estimSpeedMaxHz: 20 });
+    assert.equal(s.estimSpeedMinHz, 10);
+    assert.equal(s.estimSpeedMaxHz, 100);
+    assert.equal(parseSettings({ estimSpeedMinHz: 0 }).estimSpeedMinHz, 1);
+    assert.equal(parseSettings({ estimSpeedMaxHz: 5000 }).estimSpeedMaxHz, 1000);
   });
 });

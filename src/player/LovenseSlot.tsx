@@ -4,7 +4,8 @@
 // scene changes; the script follows scene.id.
 import { loadFunscript } from "../funscript/load.ts";
 import type { Funscript } from "../funscript/parse.ts";
-import type { LovenseDevice, LovenseStatus } from "../lovense/device.ts";
+import type { LovenseStatus } from "../lovense/device.ts";
+import type { LovenseToy } from "../lovense/toy.ts";
 import { getRuntime } from "../runtime.ts";
 import type { GainCombiner } from "../sync/gain.ts";
 import { parseSettings } from "../sync/settings.ts";
@@ -28,12 +29,13 @@ function playerGetters(): (() => unknown)[] {
   ];
 }
 
-function useDeviceStatus(device: LovenseDevice): LovenseStatus {
-  const [status, setStatus] = React.useState<LovenseStatus>(() => device.status());
+function useLovenseStatus(toy: LovenseToy | undefined): LovenseStatus {
+  const [status, setStatus] = React.useState<LovenseStatus>(() => toy?.legacyStatus() ?? { connection: "disconnected" });
   React.useEffect(() => {
-    setStatus(device.status());
-    return device.onStatus(setStatus);
-  }, [device]);
+    if (!toy) return;
+    setStatus(toy.legacyStatus());
+    return toy.onLegacyStatus(setStatus);
+  }, [toy]);
   return status;
 }
 
@@ -85,15 +87,15 @@ export function LovenseSlot(props: { scene?: StashScene }) {
   const rawKey = JSON.stringify(raw);
   // ScenePlayer re-renders on every timeupdate: parse only when the settings change
   const settings = React.useMemo(() => parseSettings(raw), [rawKey]);
-  const status = useDeviceStatus(rt.device);
+  const lovense = rt.lovense();
+  const status = useLovenseStatus(lovense);
   const gain = useGain(rt.gains);
   const interactive = props.scene?.interactive === true;
   const sceneId = props.scene?.id != null ? String(props.scene.id) : undefined;
   const load = useFunscript(interactive ? sceneId : undefined);
 
   React.useEffect(() => {
-    rt.engine.setSettings(settings);
-    rt.device.setNamePrefix(settings.namePrefix);
+    rt.setSettings(settings);
   }, [rt, settings]);
 
   React.useEffect(() => {
@@ -102,7 +104,7 @@ export function LovenseSlot(props: { scene?: StashScene }) {
 
   // a toy paired on an earlier visit reconnects without a click
   React.useEffect(() => {
-    if (interactive) void rt.device.resume();
+    if (interactive) void rt.manager.resumeAll();
   }, [rt, interactive]);
 
   React.useEffect(() => {
@@ -128,12 +130,13 @@ export function LovenseSlot(props: { scene?: StashScene }) {
 
   const onConnect = React.useCallback(() => {
     // called in the click handler: the user gesture the Bluetooth picker needs
-    void rt.device.connect();
+    void rt.manager.connect("lovense");
   }, [rt]);
-  const onTest = React.useCallback(() => rt.engine.test(), [rt]);
+  const onTest = React.useCallback(() => rt.lovense()?.test(), [rt]);
   const onStop = React.useCallback(() => {
     rt.engine.stop();
-    void rt.device.disconnect();
+    rt.manager.stopAll();
+    rt.manager.disconnectAll();
   }, [rt]);
 
   if (!shouldRender(interactive, status)) return null;

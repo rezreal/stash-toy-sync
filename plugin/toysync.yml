@@ -1,8 +1,10 @@
 name: Toy Sync
 description: >-
-  Drives Lovense vibrators over Web Bluetooth from the scene's funscript while
-  it plays in stash's own scene player. Connect the toy with the control under
-  the player (Chrome or Edge, stash over https or localhost).
+  Drives Bluetooth toys (Lovense vibrators; e-stim drivers plug in) from the
+  scene's funscript while it plays in stash's own scene player. Devices,
+  mapping and e-stim calibration live on the /toysync page; a small bar under
+  the player shows what is connected (Chrome or Edge, stash over https or
+  localhost).
 version: 0.2.0
 url: https://github.com/stashapp/stash
 
@@ -16,16 +18,19 @@ settings:
   mode:
     displayName: Mode (speed or position)
     description: >-
-      How the funscript becomes vibration. speed (default): the faster the
-      stroke moves, the stronger the vibration; pauses in the script are
-      quiet. position: the deeper the stroke, the stronger (funscript
-      position 100 = out = off, 0 = deepest = full).
+      How the main stroke becomes intensity. speed (default): the faster the
+      stroke moves, the stronger; pauses in the script are quiet. position:
+      the deeper the stroke, the stronger (funscript position 100 = out =
+      off, 0 = deepest = full). Either way, e-stim balance follows the depth
+      (out = channel A, deep = channel B) and e-stim frequency the stroke
+      speed.
     type: STRING
   strength:
-    displayName: Strength (%)
+    displayName: Lovense strength (%)
     description: >-
-      Caps the vibration: 0-100, default 100. Every level, snap pulses and the
-      Test button are scaled by it, so 50 never goes above half power.
+      Caps the Lovense vibration: 0-100, default 100. Every level, snap pulses
+      and the Test button are scaled by it, so 50 never goes above half power.
+      E-stim devices are capped by their own calibration instead.
     type: NUMBER
   speedFull:
     displayName: Full-power speed (speed mode)
@@ -36,7 +41,7 @@ settings:
       power for the fastest parts.
     type: NUMBER
   minLevel:
-    displayName: Minimum level (0-20)
+    displayName: Lovense minimum level (0-20)
     description: >-
       The lowest level used while the script moves at all, so gentle parts
       can still be felt. Default 0. When the script is still, the toy is off
@@ -64,9 +69,48 @@ settings:
       ignored.
     type: BOOLEAN
   namePrefix:
-    displayName: Extra Bluetooth name filter
+    displayName: Extra Lovense Bluetooth name filter
     description: >-
       Optional. Lovense toys show up as LVS-... or LOVE-... in the browser's
       Bluetooth picker. If yours uses another name, enter how it starts here
       to have it listed too.
     type: STRING
+  axisMap:
+    displayName: Axis mapping (multi-axis scripts)
+    description: >-
+      Optional. Which embedded funscript axis drives what, as axis=target
+      pairs separated by commas, e.g. "volume=intensity, alpha=balance,
+      e1=a, e2=b, pulse_frequency=speed". Targets: intensity (overall
+      strength), balance (0 = channel A, 1 = channel B), speed (e-stim pulse
+      frequency), a and b (direct channel strengths). Empty (default):
+      volume, alpha, e1/e2 (or a/b, channel_a/channel_b) and
+      pulse_frequency/frequency are detected automatically. Anything not
+      mapped follows the main stroke.
+    type: STRING
+  nudgeCooldownSec:
+    displayName: Nudge cooldown (seconds)
+    description: >-
+      Least time between two nudges requested by other plugins (e.g.
+      Skilltree). Default 4, at least 2. Requests in between are dropped,
+      never queued.
+    type: NUMBER
+  nudgesPerMinute:
+    displayName: Nudges per minute
+    description: >-
+      Most nudges in any rolling minute. Default 6, at most 10; 0 turns
+      nudges off. Requests over the limit are dropped.
+    type: NUMBER
+  estimSpeedMinHz:
+    displayName: E-stim frequency at slowest (Hz)
+    description: >-
+      For e-stim devices: the pulse frequency used when the script's speed is
+      0 (a still or slow stroke). Default 10. Must be below the fastest
+      frequency, otherwise both defaults are used.
+    type: NUMBER
+  estimSpeedMaxHz:
+    displayName: E-stim frequency at fastest (Hz)
+    description: >-
+      For e-stim devices: the pulse frequency used at full speed (a stroke at
+      Full-power speed or faster, or a frequency axis at 100). Default 100.
+      Devices clamp it to what they can do.
+    type: NUMBER
