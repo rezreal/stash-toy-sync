@@ -3,6 +3,7 @@
 import { installHook } from "./hook.ts";
 import { registerScenePlayerPatch } from "./player/patch.tsx";
 import { getRuntime } from "./runtime.ts";
+import "./coyote/register.ts";
 
 const rt = getRuntime();
 installHook(window, { device: rt.device, gains: rt.gains });
