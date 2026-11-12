@@ -1,14 +1,17 @@
 // Mounted next to stash's ScenePlayer (see patch.tsx). Loads the scene's
-// funscript, ticks the sync engine from the player every TICK_MS and shows
-// the bar. stash keeps ScenePlayer (and so this slot) mounted across
-// scene changes; the script follows scene.id.
+// funscript, binds the scene (script + stored mapping) to the devices, ticks
+// the sync engine from the player every TICK_MS, feeds the playback clock the
+// media events and shows the bar. stash keeps ScenePlayer (and so this slot)
+// mounted across scene changes; the script follows scene.id.
 import { loadFunscript } from "../funscript/load.ts";
+import { fileKeyOf, type StashFileLike } from "../mapping/sceneMap.ts";
+import { mediaEventToPlayback } from "./clock.ts";
+import { playerGetters } from "./getters.ts";
 import type { Funscript } from "../funscript/parse.ts";
 import { driverLabel } from "../devices/registry.ts";
 import type { DeviceKind } from "../devices/types.ts";
 import { getRuntime } from "../runtime.ts";
 import { useDeviceEntries, useGain, useSyncedSettings } from "../ui/hooks.ts";
-import { pluginApi } from "../ui/pluginApi.ts";
 import { readPlayback, VIDEO_PLAYER_ID } from "./playback.ts";
 import { ToySyncBar } from "./ToySyncBar.tsx";
 import { shouldRender, type ScriptState } from "./view.ts";
@@ -20,13 +23,9 @@ export interface StashScene {
   id?: string;
   title?: string;
   interactive?: boolean;
-}
-
-function playerGetters(): (() => unknown)[] {
-  return [
-    () => pluginApi().utils?.InteractiveUtils?.getPlayer?.(),
-    () => (window as unknown as { videojs?: { getPlayer?: (id: string) => unknown } }).videojs?.getPlayer?.(VIDEO_PLAYER_ID),
-  ];
+  /** stash's SceneData fragment carries both */
+  custom_fields?: Record<string, unknown> | null;
+  files?: (StashFileLike & { duration?: number; path?: string })[] | null;
 }
 
 interface ScriptLoad {
@@ -73,9 +72,24 @@ export function ToySyncSlot(props: { scene?: StashScene }) {
   const sceneId = props.scene?.id != null ? String(props.scene.id) : undefined;
   const load = useFunscript(interactive ? sceneId : undefined);
 
+  // the stored mapping of the scene (toysync_map, else a migrated tcode_map)
+  const fields = props.scene?.custom_fields ?? undefined;
+  const fieldsKey = JSON.stringify(fields ?? null);
+  const fileKey = fileKeyOf(props.scene?.files?.[0]);
   React.useEffect(() => {
-    rt.engine.setScript(load.state === "ready" ? load.script : undefined);
-  }, [rt, load]);
+    if (!sceneId) return;
+    rt.sceneMaps.bind(sceneId, fields, fileKey);
+  }, [rt, sceneId, fieldsKey, fileKey]);
+  React.useEffect(() => {
+    if (!sceneId) return;
+    return () => rt.sceneMaps.unbind(sceneId);
+  }, [rt, sceneId]);
+
+  // the script and the mapping go to the engine and the devices (self-timed ones get their program)
+  React.useEffect(() => {
+    rt.binder.setScene(sceneId ? { sceneId, script: load.sceneId === sceneId && load.state === "ready" ? load.script : undefined } : undefined);
+  }, [rt, sceneId, load]);
+  React.useEffect(() => () => rt.binder.setScene(undefined), [rt]);
 
   // the open scene: nudges need one, the devices page shows its mapping
   const title = props.scene?.title || undefined;
@@ -104,7 +118,11 @@ export function ToySyncSlot(props: { scene?: StashScene }) {
     // capturing listener on the document sees them.
     const onMedia = (e: Event) => {
       const root = document.getElementById(VIDEO_PLAYER_ID);
-      if (root && e.target instanceof Node && root.contains(e.target)) tick();
+      if (root && e.target instanceof Node && root.contains(e.target)) {
+        tick();
+        const ev = mediaEventToPlayback(e.type);
+        if (ev) rt.clock.notify(ev);
+      }
     };
     for (const name of MEDIA_EVENTS) document.addEventListener(name, onMedia, true);
     return () => {
